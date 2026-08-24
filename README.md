@@ -1,6 +1,6 @@
-Ecoli_MA contains scripts used for mapping reads and calling variants in sequenced mutation accumulation lines of *Escherichia coli*. These data were used in Grosse-Sommer, Newman and Hadfield (2026) to quantify the fitness effects of new mutations and in Grosse-Sommer and Hadfield (2026) as part of an analysis of *E. coli* mutational patterns.
+Ecoli_MA contains scripts used for mapping reads and calling variants in sequenced mutation accumulation lines of *Escherichia coli*. Growth data for each line are also included together with a script for analysing them.  These data were used in Grosse-Sommer, Newman and Hadfield (2026) to quantify the fitness effects of new mutations and in Grosse-Sommer and Hadfield (2026) as part of an analysis of *E. coli* mutational patterns.
 
-The main script for mapping reads, calling variants and testing the accuracy of the pipeline is [Mutation_Calling.Rmd](scripts/Mutation_Calling.html), and can be found in scripts/.
+The main script for mapping reads, calling variants and testing the accuracy of the pipeline is [Mutation_Calling.Rmd](scripts/Mutation_Calling.html). The main script for analysing growth is [Fitness_Analyses.Rmd](scripts/Fitness_Analyses.Rmd). Both scripts can be found in scripts/.
 
 
 ## References

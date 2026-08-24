@@ -1,0 +1,694 @@
+---
+title: "*Esherichia coli* Fitness Analysis"
+author:
+output: 
+  bookdown::html_document2:
+    toc: true
+    css: custom.css
+bibliography: /Users/jhadfiel/Work/Tex/library/JarLib.bib
+---
+
+
+<script src="hideOutput.js"></script>
+
+<script type="text/javascript">
+  // When the document is fully rendered...
+  $(document).ready(function() {
+    // ...select all header elements...
+    $('h1, h2, h3, h4, h5').each(function() {
+      // ...and add an id to them corresponding to their 'titles'
+      $(this).attr('id', $(this).html());
+    });
+  });
+</script>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+rerun.gr<-FALSE
+rerun.confint<-FALSE
+rerun.mcmc<-FALSE
+save<-FALSE
+
+if(Sys.info()["nodename"]%in%c("sce-bio-c04553", "SCE-BIO-C07467", "S42-76R7VW5J")){
+  root<-"/Users/jhadfiel/Work/Ecoli_MA"
+}else{
+  root<-"/Users/s2221673"
+}
+# rmarkdown::render(file.path(root, "scripts/Fitness_Analyses.Rmd"))
+
+if(!rerun.confint){
+  load(file.path(root,'models/ci_m1.Rdata'))
+  load(file.path(root,'models/ci_m3.Rdata'))
+}
+if(!rerun.mcmc){
+ load(file.path(root,'models/m1_mcmc.Rdata'))
+}
+if(!rerun.gr){
+  if(!exists("df")){stop("rerun.gr=FALSE but 'df' does not exist")}
+}
+```
+
+220 *Escherichia coli* lines underwent 36 days of mutation accumulation (MA), the time it takes to accumulate one mutation on average. The aim of the study was to estimate the distribution of fitness effects of new mutations (DFE) by measuring the growth rate of 188 of these lines and their common ancestor. Since the protocol also generated many lines that had accumulated no mutants, we could also estimate the distribution of fitness effects across genetically identical MA lines. We refer to this as the distribution of fitness effects due to environmental effects (EDFE) although acknowledge that we use the word 'environmental' to capture all systematic differences between lines not due to DNA mutations.
+
+# Data
+
+The 188 *Escherichia coli* mutation accumulation lines and four ancestral replicate lines were split into two sets, each containing 94 MA lines and 2 replicates of the ancestral line. For each set, the frozen lines (`line`) were grown while shaking for 16 hours at 37$^{\circ}$C in 10ml LB media, after which 10$\mu$L of culture was transferred to a 96-well filled with 190$\mu$L of LB.  Optical density measurements (`OD`) were taken every 5 minutes for four hours (`timepoint` in hours). This was repeated 14 times, and the membership of each set and the position of each line (`row` and `column`) on the `plate` was randomised between replicates.  The `date` on which the lines were defrosted and grown is recorded together with the `person` (JDH or DN) inoculating the cultures. JGS was responsible for inoculating all 96 well plates. 
+
+```{r read_od}
+library(dplyr)
+library(gcplyr)
+library(ggplot2)
+library(tidyr)
+
+od_df<-read.csv(file.path(root, "meta/growth_data.csv"))
+```
+
+We can plot the optical density (OD) over time (with time jittered):
+
+```{r plot_od}
+plot(OD~jitter(timepoint,2), data=od_df, pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
+```
+
+While the bulk of the growth curves look reasonable, there are clearly some issues with no growth in some wells and some unusually high starting OD's. 
+
+# Data filtering
+
+## High starting OD 
+
+There are `r sum(subset(od_df, timepoint==0.08)$OD>0.2)` replicates that have a starting OD higher than 0.2. 
+
+```{r highOD}
+od_df <- mutate(group_by(od_df, plate, row, column), highOD = OD[timepoint==0.08]>0.2)
+tapply(od_df$highOD, od_df$plate, sum)/48
+```
+
+31 of these replicates were on plates 22 and 23. The function `plot_plate` allows us to visualise data in plate layout: 
+
+<div class="fold s">
+```{r plot_plate_fun}
+plot_plate <- function(df, z, palette = "plasma", digits = 2) {
+
+  ggplot(df, aes(x = as.factor(column), y = factor(row, levels=rev(LETTERS[1:8])), fill = df[[z]])) +
+    geom_tile(colour = "grey50") +
+    geom_text(aes(label = round(df[[z]], digits)),
+              size = 3, colour = "white") +
+    scale_fill_viridis_c(option = palette, na.value = "white") +
+    coord_equal() +
+    labs(x = "Column", y = "Row", fill = z) +
+    theme_minimal(base_size = 14) +
+    theme(panel.grid = element_blank())
+}
+```
+</div>
+
+We can see that wells with unusually high starting OD are clustered on the two plates: 
+
+```{r plot_plate}
+plot_plate(subset(od_df, timepoint==0.08 & plate==22), z = "OD")
+plot_plate(subset(od_df, timepoint==0.08 & plate==23), z = "OD")
+```
+
+This does not look like systematic pipetting error, but rather some local issue with the plates.  Of the remaining seven wells with high starting OD, two were known to be due to pipetting error and were doubly inoculated (5-H-1 and 28-G-1 in red) and two were unintentionally blacked-out (2-A-8 and 1-A-5 in blue, see below)
+
+
+```{r plot_od2}
+plot(OD~jitter(timepoint,2), data=od_df, pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
+points(OD~timepoint, data=subset(od_df, plate==5 & row=="H" & column==1), pch=16, cex=0.5, col="red")
+points(OD~timepoint, data=subset(od_df, plate==28 & row=="G" & column==1), pch=16, cex=0.5, col="red")
+points(OD~timepoint, data=subset(od_df, plate==2 & row=="A" & column==8), pch=16, cex=0.5, col="blue")
+points(OD~timepoint, data=subset(od_df, plate==1 & row=="A" & column==5), pch=16, cex=0.5, col="blue")
+```
+
+For the remaining three wells (7-B-6, 28-B-4, 28-F-7) the starting OD was only a little above 0.2 and the growth curves look fine:
+
+```{r plot_od2b}
+plot(OD~timepoint, data=subset(od_df, highOD & plate%in%c(7,28) & row!="G"), pch=16, cex=0.5, bty="l", ylab="Optical Density", xlab="Time (hours)")
+```
+
+In order to retain these growth curves for later we will change their highOD flag to FALSE:
+
+```{r }
+with(od_df, highOD[which(highOD & plate%in%c(7,28) & row!="G")]<-FALSE)
+```
+
+## Empty wells
+
+In 40 cases the initial culture looked like it hadn't grown, and in an error of judgement the culture was not assayed for growth and the well was either blacked-out (2-A-8 and 1-A-5, see above) or left empty (otherwise). 
+
+```{r empty_wells}
+plate.blank<-c(1, 2, 3, 5, 7, 9, 11, 11, 11, 15, 15, 15, 17, 19, 19, 21, 21, 21, 23, 23, 23, 25, 25, 27, 2, 8, 12, 18, 20, 22, 22, 22, 24, 24, 26, 28, 28, 28, 10, 10)
+row.blank<-c("A", "A", "A", "B", "D", "H", "B", "D", "F", "F", "G", "H", "G", "B", "C", "A", "E", "F", "E", "F", "F", "C", "C", "D", "A", "C", "B", "F", "H", "A", "B", "H", "G", "F", "F", "C", "A", "E", "D", "H")
+column.blank<-c(5, 8, 6, 3, 10, 5, 2, 3, 7, 6, 6, 12, 7, 12, 12, 6, 7, 8, 2, 2, 12, 2, 8, 2, 8, 12, 8, 4, 5, 8, 10, 10, 1, 1, 1, 2, 9, 9, 8, 12)
+```
+
+```{r }
+od_df <- mutate(group_by(od_df, plate, row, column), empty = paste(plate, row, column)%in%paste(plate.blank, row.blank, column.blank))
+```
+
+```{r plot_empty_wells, echo=FALSE}
+plot(OD~jitter(timepoint,2),data=subset(od_df, empty), pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
+```
+
+Note four (rather than two) wells do not appear empty - the additional wells are 22-H-10 and 23-F-2 for which there appeared to be an issue with the plate (see above). The number of empty wells per line is clearly overdispersed:
+
+```{r }
+n_empty<-tapply(od_df$empty, od_df$line, sum)/48
+hist(n_empty, breaks=100, ylab="Number of Lines", xlab="Number of Empty Wells")
+```
+
+In particular line `r names(n_empty)[which.max(n_empty)]` repeatedly failed to grow (`r max(n_empty)` times out of 14).
+
+```{r }
+n_empty[which(n_empty!=0)]
+```
+
+## Extra wells
+
+In addition, well 5-F-9 also appears empty. This replicate was of line `r subset(od_df, plate==5 & row=="F" & column==9)$line[1]` which repeatedly failed to grow (see above).
+
+```{r }
+od_df <- mutate(group_by(od_df, plate, row, column), extra_empty = OD[timepoint==2]<0.2 & !empty)
+plot(OD~jitter(timepoint,2), data=od_df, pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
+points(OD~timepoint, data=subset(od_df, extra_empty), pch=16, cex=0.5, col="red")
+```
+
+Nevertheless, three replicates of line 180 did grow despite starting at a low OD:
+
+```{r plot_empty_wells2, echo=FALSE}
+plot(OD~jitter(timepoint,2),data=subset(od_df, !empty & !extra_empty), pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
+points(OD~timepoint, data=subset(od_df, line=="180"), pch=16, cex=0.5, col="red")
+```
+
+## Filtering
+
+In what follows we remove empty wells and those in which the starting OD was greater than 0.2 (except 7-B-6, 28-B-4 and 28-F-7 which look fine):
+
+```{r }
+od_df <- subset(od_df, !highOD & !empty & !extra_empty)
+```
+
+```{r plot_OD_noproblems}
+plot(OD~jitter(timepoint,2),data=od_df, pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
+```
+
+# Growth Rate and Meta Data
+
+In order to get an estimate of the growth rate in the exponential phase we can use gcplyr [@Blazanin.2024]. The change in log OD is computed over consecutive time-points for each well and a rolling 3-timepoint average calculated:  
+
+```{r growth_rate, eval=rerun.gr}
+df <- mutate(group_by(od_df, plate, row, column), deriv = calc_deriv(x = timepoint, y = OD, percapita = TRUE, blank = 0, window_width_n = 3, trans_y = 'log'))
+```
+
+For each well, the maximum average change is taken as the growth rate:
+
+```{r sum_growth_rate, eval=rerun.gr}
+df <- summarize(df, gr = max_gc(deriv), across(-c(timepoint, OD, deriv),first))
+```
+
+Since growth rates may be different in the inner wells, we can create a factor for modelling this
+
+```{r inner, eval=rerun.gr}
+df <- mutate(df, inner = as.numeric(!(row %in% c('A', 'H') | column %in% c(1, 12))))
+```
+
+We can also add the number of mutations per line
+
+```{r number_mutations}
+mutations<-read.csv(file.path(root, "meta/real_mutations.csv"))
+```
+
+```{r }
+nmutations<-table(factor(mutations$line, levels=unique(df$line)))
+df$mutation<-as.numeric(nmutations[df$line])
+```
+
+and have two indicator variables for whether a line is the ancestor (`anc`) or not (`noanc`):
+
+```{r anc-noanc}
+df$anc<-as.numeric(df$line=="anc")
+df$noanc<-as.numeric(df$line!="anc")
+```
+
+A violin plot of the growth rates reveals an outlier with a very high growth rate:
+
+```{r plot_gr}
+ggplot(data=df,aes(x='',y=gr)) + geom_violin() + geom_boxplot(width=0.1)+scale_y_continuous(name="growth rate")
+```
+
+It seems that the high growth rate is driven by the anomalous OD readings (in red)
+
+```{r anomalous_OD}
+plot(log(OD)~timepoint, data=subset(od_df, plate==23 & row=="H" & column==1), ylab="log(OD)", xlab="Time (hours)")
+points(log(OD)~timepoint, data=subset(od_df, plate==23 & row=="H" & column==1 & timepoint>1.55 & timepoint<1.7), col="red", pch=16, cex=1.25)
+```
+
+Consequently, we also remove this data point:
+
+```{r rm_anomalous_OD}
+df<-subset(df, gr<1.5)
+```
+
+Line 95 accumulated a mutation in the mismatch-repair gene MutL and consequently had an elevated mutation rate with `r sum(mutations$line==95)` fixed mutations observed. There is evidence from the sequencing data that an addition five mutations arose after mutation accumulation but prior to sequencing. Given new mutations are also likely to arise during the growth assay, and data from this line are likely to have high leverage (all other lines had between zero and five), we removed this line from the analysis:
+
+```{r rm_95}
+df<-subset(df, line!=95)
+```
+
+## Empty wells
+
+40 replicates were not assayed because the initial culture looked like it hadn't grown, with  certain lines being overrepresented. If the initial culture did not grow because of the accumulated mutations in the line, this will bias our estimates of the DFE. However, if we compare the growth rates of lines where at least one replicates was excluded with the growth rates of lines where no replicates were excluded the difference is small and non-significant:
+
+
+```{r }
+nz_empty<-n_empty[which(n_empty!=0)]
+summary(lm(gr~as.factor(line%in%nz_empty), data=df))
+```
+
+Indeed, if we plot the growth rates of the four lines with the most replicates excluded (the coloured points) they do not obviously grow more slowly than other lines:
+
+```{r excuded_plot}
+boxplot(gr~as.factor(line%in%nz_empty), data=df, ylab="Growth Rate", xlab="At least one replicate excluded")
+
+worst_four<-subset(df, line%in%names(nz_empty)[which(nz_empty>4)])
+
+points(gr~I(2+(as.numeric(as.factor(line))-2.5)/6), col=as.numeric(as.factor(line)), data=worst_four)
+```
+
+and the line (in red) with the lowest average growth rate actually has no mutations:
+
+```{r }
+with(worst_four, mutation[match(levels(as.factor(line)), line)])
+```
+
+# Models
+
+## Main Model
+
+We fit a linear mixed model to the growth rates with the aim of estimating the mean and variance of the distribution of fitness effects of new mutations (DFE).  We can divide the terms of the model into those that are biologically interesting:
+
+* `(Intercept)` (fixed): expected growth rate of a zero-mutant line. 
+* `mutation` (fixed): the linear change in fitness per mutation, related to the mean of the DFE.
+* `anc` (fixed) effect of a line being an ancestor.
+* `(sqrt(mutation)-1|line)` (random) the effect of each mutation in a specific non-ancestral line. The variance of these effects is related to the variance of the DFE.  
+* `(noanc-1|line)` (random) the effect of being a specific non-ancestral line when the number of new mutations is zero. The variance of these effects is the variance of the EDFE.
+
+and those that control for technical variation:
+
+* `person` (fixed) effect of the person inoculating the cultures.
+* `inner` (fixed) effect of whether growth rates are different in inner wells. 
+* `(1|plate)` (random) effect of being on a specific plate. 
+* `(1|plate:column)` (random) effect of being in a specific column of a specific plate.
+* `(1|plate:row)` (random) effect of being in a specific row of a specific plate.
+
+```{r m1}
+library(lmerTest)
+library(MCMCglmm)
+
+m1<-lmer(gr~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df)
+summary(m1)
+```
+
+The biological findings of this model are:
+
+* Assuming no cell death, we can divide $ln(2)$ by the intercept to get an estimate of the generation time of a mutant-free line (grown in an outer well and inoculated by DN): `r round(60*log(2)/fixef(m1)["(Intercept)"])`  minutes.
+
+* The `mutation` effect is the change in log growth rate caused by a single mutation - it is small and not significantly different from zero.
+
+* The `anc` effect is positive suggesting that the ancestral line grows faster than the average growth rate of the mutant-free lines.  
+
+* The `line.1` (`noanc`) variance, which is due to between-line differences not caused by mutations, explains approximately  `r round(100*VarCorr(m1)[["line.1"]]/sum(data.frame(VarCorr(m1))[,"vcov"]))`\% of the total variance (after controlling for the fixed effects).   
+
+* The estimate of the `line` (`sqrt(mutation)`) variance is bound at zero and suggests that single mutations generate very little, if any, between-line variance. 
+
+The diagnostic plot of the residuals against the fitted values looks OK:
+
+```{r }
+plot(m1)
+``` 
+
+We can also plot the data and some model predictions in order to get a feel for what the model is telling us
+
+<div class="fold s">
+```{r main_plot,  fig.width = 7,fig.height = 10, fig.cap="Raw growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. Replicates of non-ancestral lines are in orange and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate."}
+
+intercept=fixef(m1)['(Intercept)']
+mutation_effect=fixef(m1)['mutation']
+ancestor_effect=fixef(m1)['anc']
+
+env_variance<-as.numeric(VarCorr(m1)[['line.1']])
+tech_variance<-as.numeric(VarCorr(m1)[['plate.column']]+VarCorr(m1)[['plate.row']]+VarCorr(m1)[['plate']])
+mut_variance<-as.numeric(VarCorr(m1)[['line']])
+res_variance<-sigma(m1)^2
+
+pred_mutations<-0:3
+
+pred_mean<-intercept+mutation_effect*pred_mutations
+pred_var<-env_variance+res_variance+mut_variance*pred_mutations+tech_variance
+pred_bl_var<-env_variance+mut_variance*pred_mutations
+
+pred_ancestor<-intercept+ancestor_effect
+
+pred_lower_q<-qnorm(0.025,pred_mean,sqrt(pred_var))
+pred_upper_q<-qnorm(0.975,pred_mean,sqrt(pred_var))
+
+pred_lower_q_bl<-qnorm(0.025,pred_mean,sqrt(pred_bl_var))
+pred_upper_q_bl<-qnorm(0.975,pred_mean,sqrt(pred_bl_var))
+
+plot_data<-cbind(pred_mutations,pred_mean,pred_lower_q,pred_upper_q,pred_lower_q_bl,pred_upper_q_bl)
+
+df_plot <- df %>% 
+  mutate(point_col = case_when(
+    noanc == 0                          ~ "blue",
+    mutation <= 3 & noanc == 1          ~ "orange",
+    TRUE                                ~ "other")
+  )
+
+df_plot<-df_plot[order(df_plot$point_col, decreasing=TRUE),]
+
+CI <- ggplot(plot_data, aes(pred_mutations, pred_mean)) +
+
+  ## a) raw-data points (jittered) -------------
+  geom_jitter(data = filter(df_plot, point_col != "other"),
+              aes(x = mutation, y = gr, colour = point_col),
+              width  = .20, height = 0, alpha = .5, show.legend = FALSE) +
+
+  scale_colour_manual(values = c(orange = "darkorange",
+                                 blue   = "darkblue")) +
+
+  ## b) regression line ------------------------
+  geom_abline(intercept = intercept, slope = mutation_effect) +
+
+  ## c) fitted means & error bars --------------
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = pred_upper_q, ymax = pred_lower_q),
+                width = .5, colour = "black", linetype = "dashed") +
+  geom_errorbar(aes(ymin = pred_upper_q_bl, ymax = pred_lower_q_bl),
+                width = .5, colour = "black") +
+
+  ## d) ancestor point -------------------------
+  annotate("point", x = 0, y = pred_ancestor, colour = "cyan", size = 3, alpha = 1)+
+
+  ## e) axes, labels, limits -------------------
+  scale_x_continuous(limits = c(-.5, 3.5),
+                     name   = "Number of mutations") +
+  ylab("Growth rate") +
+
+  ## f) theme ----------------------------------
+  theme_minimal(base_size = 11) +
+  theme(
+ #   axis.text   = element_text(face = "bold"),
+   axis.title  = element_text(size = 11),
+    axis.title.y = element_text(margin = margin(t = 10, r = 20, b = 20))
+  )
+
+  plot(CI)
+  if(save){
+  ggsave(file.path(root,'models/fitness.jpeg'),width = 5, height = 4,units='in')
+  }
+```
+</div>
+
+There seems to be quite a few reduced growth rates in the single mutant class - many of these are associated with line 45 which has a frameshift mutation in the *SspA* gene:
+
+```{r }
+table(subset(df, gr<0.95)$line)
+```
+
+We can highlight the data points in this line in red. 
+
+<div class="fold s">
+```{r ,  fig.width = 7,fig.height = 10, fig.cap="Raw growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. Replicates of non-ancestral lines are in orange and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate and the red points are from line 45"}
+
+df_45 <- df_plot %>%filter(line == 45)
+CI2 <- CI +                                          # start from CI
+  geom_jitter(data = df_45,                   # only these rows
+              aes(x = mutation, y = gr),             # same aesthetics
+              width  = .20, height = 0,
+              colour = "red",                        # fixed colour
+              size   = 2.2, alpha = .8,
+              show.legend = FALSE)
+  plot(CI2)
+   if(save){
+  ggsave(file.path(root,'models/fitness2.jpeg'),width = 5, height = 4,units='in')
+  } 
+```
+</div>
+
+## Obtaining the DFE 
+
+The previous model provides a model for the growth rates of each line. However, 
+to obtain the DFE we need to compute the distribution of relative fitnesses for single-mutant lines compared to zero-mutant lines. The expected growth rate of single-mutant lines ($r_w$) is the intercept which we denote $\beta_0$.
+
+\begin{equation}
+r_w = \beta_0
+\end{equation}
+
+The expected growth rate of line $i$ is
+
+\begin{equation}
+r_i = \beta_0 + n_i\beta_M+\sqrt{n_i}u^{(M)}_i
+\end{equation}
+
+where the expectation is taken over the distribution of environmental effects. $n_i$ is the number of mutations line $i$ carries (`mutation`) and $\beta_M$ is the corresponding slope. $u^{(M)}_i$ is the line slope as parameterised in the term `(sqrt(mutation)|line)`. 
+
+The selection coefficient for MA line $i$ is $r_i-r_w$, although this is in units *per hour* and is therefore hard to compare across studies and species (See Equation 2.2 in @Chevin.2011b and Equation 7 in  @Fink.2024). To make selection coefficients more comparable, they can be put on the scale of generations by using Equation 3.2 in @Chevin.2011b:
+
+\begin{equation}
+s_i=\frac{r_i-r_w}{r_w}ln(2)
+\end{equation}
+
+
+Setting $n=1$, the distribution of generation-scaled fitness effects (the DFE) from our model is normal with mean 
+
+\begin{equation}
+\mu_s  = \frac{\beta_M}{\beta_0}ln(2)
+\end{equation}
+
+and variance 
+
+\begin{equation}
+\sigma^2_s  = \frac{\sigma^2_M}{\beta_0^2}ln(2)^2
+\end{equation}
+
+
+
+Since the mean and the variance of the DFE are functions of model parameters we refit model `m1` using Markov chain Monte Carlo in order to obtain credible intervals. 
+
+
+```{r mcmc, eval=rerun.mcmc}
+
+m1_mcmc<-MCMCglmm(gr~mutation+anc+person+inner, 
+                  random=~line+idh(sqrt(mutation)):line+plate+plate:column+plate:row, 
+                  data=as.data.frame(df), 
+                  prior=list(R=IW(1, 0.002), G=F(1,1000)), 
+                  longer=10, verbose=FALSE)
+
+```
+
+The model estimates are very close to those obtained using restricted maximum likelihood:
+
+```{r }   
+summary(m1_mcmc)
+```
+
+We can obtain the posterior distributions for the mean and variance of the DFE
+
+```{r }
+mean_s<-log(2)*m1_mcmc$Sol[,"mutation"]/m1_mcmc$Sol[,"(Intercept)"]
+
+mean(mean_s)
+HPDinterval(mean_s)
+
+var_s<-(log(2)^2)*m1_mcmc$VCV[,"sqrt(mutation).line"]/m1_mcmc$Sol[,"(Intercept)"]^2
+
+mean(var_s)
+HPDinterval(var_s)
+```
+
+### Estimating the DFE using the ancestor as a reference
+
+Most studies do not have zero-mutant lines to which they can compare the fitness of lines carrying mutations. This is only valid if all between-line variance is due to mutations.  If we had used the ancestor as the reference then
+
+\begin{equation}
+r_w = \beta_0+\beta_A
+\end{equation}
+
+where $\beta_A$ is the effect of the ancestor. The mean and variance of the DFE would then be:
+
+\begin{equation}
+%\mu_s = \frac{\beta_0+\beta_M-\beta_0-\beta_A}{\beta_0+\beta_A}ln(2)
+\mu_s = \frac{\beta_M-\beta_A}{\beta_0+\beta_A}ln(2)
+\end{equation}
+
+and 
+
+\begin{equation}
+\sigma^2_s  = \frac{\sigma^2_M}{(\beta_0+\beta_A)^2}ln(2)^2
+\end{equation}
+
+which gives
+
+
+```{r }
+mean_s2<-log(2)*(m1_mcmc$Sol[,"mutation"]-m1_mcmc$Sol[,"anc"])/(m1_mcmc$Sol[,"(Intercept)"]+m1_mcmc$Sol[,"anc"])
+
+mean(mean_s2)
+HPDinterval(mean_s2)
+
+var_s2<-(log(2)^2)*m1_mcmc$VCV[,"sqrt(mutation).line"]/(m1_mcmc$Sol[,"(Intercept)"]+m1_mcmc$Sol[,"anc"])^2
+
+mean(var_s2)
+HPDinterval(var_s2)
+```
+
+## Is the ancestor effect comparable to other zero-mutant line effects? 
+
+The ancestor's growth rate is estimated to be `r round(fixef(m1)["anc"],4)` units larger than the average growth rate of the zero-mutant lines. However, the zero-mutant lines are not equivalent and vary to some degree in their growth rate - the estimated standard deviation (the square-root of the `line.1` variance) is `r round(sqrt(VarCorr(m1)["line.1"][[1]]), 4)`. Since `r round(fixef(m1)["anc"],4)`/`r round(sqrt(VarCorr(m1)["line.1"][[1]]), 4)` = `r round(fixef(m1)["anc"]/sqrt(VarCorr(m1)["line.1"][[1]]), 3)` it is not an outlier with respect to the distribution of zero-mutant line effects. We can test this formally by fitting a random line effect for the ancestor that comes from the same distribution as the zero-mutant line effects. The fixed ancestral effect is now smaller and no longer significant:
+
+```{r m2}
+m2<-lmer(gr~  mutation + anc + person + inner + (1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df)
+summary(m2)
+```
+
+## Mutation type
+
+In the previous models all mutations are treated as being equivalent. However, we might expect synonymous mutations and small structural mutations in non-coding regions to have negligible fitness effects compared to other mutations. We can count the number of mutations per line that are not of this type (`nsyn_mutation`)
+
+```{r nsyn_mutations}
+nsyn_mutations<-subset(mutations, (nchar(REF)!=nchar(ALT) & coding) | ALT=="<DEL>" | type%in%c("nonsynonymous", "nonsense", "frameshift"))
+nnsyn_mutations<-table(factor(nsyn_mutations$line, levels=unique(df$line)))
+df$nsyn_mutation<-as.numeric(nnsyn_mutations[df$line])
+```
+
+and rerun model with this as a predictor
+
+```{r m3}
+m3<-lmer(gr~  nsyn_mutation + anc + person + inner + (noanc-1|line) + (sqrt(nsyn_mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+summary(m3)
+```
+
+We find that even when we only look at mutations that likely have a stronger effect on fitness, mutations do not significantly influence growth rate. 
+
+## Significance testing of random effect variances
+
+We use Satterthwaite's approximate t-test for testing the significance of fixed effects (as implemented in $\texttt{lmerTest}$). To test the significance of the random effects we perform likelihood ratio tests implemented in the $\texttt{anova}$ method for lmer objects (although we note that the p-values could be halved [@Chernoff.1954]).
+
+### Genetic line effects
+
+We can omit the term `(sqrt(mutation)-1|line)` from model `m1` to test whether the variance of the DFE is non-zero
+
+
+```{r m4}
+m4<-lmer(gr~  mutation + anc + person + inner + (noanc-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+anova(m4,m1)
+```
+
+The evidence is not strong
+
+### Environmental line effects
+
+We can omit the term `(noanc-1|line)` from model `m1` to test whether the variance of the EDFE is non-zero
+
+```{r m5}
+m5<-lmer(gr~  mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+anova(m5,m1)
+```
+
+There is strong evidence that lines vary in their fitness due to things other than the mutations they've accumulated.
+
+```{r m6, echo=FALSE}
+m6<-lmer(gr~  mutation + anc + person + inner  + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+# additional analysis for performing LRT on the total between-line variance
+```
+
+# Comparison with @Sane.2018
+
+@Sane.2018 also used an MA procedure where lines differ by single mutations. However, rather than running many lines for a short period of time and sequencing at the end, they ran few lines for a long period and sequenced them periodically. Consequently, rather than comparing MA lines with a common unmutated ancestor, each line is compared to its ancestor prior to the accumulation of a single mutation.  In total, 80 single mutations were assayed.  
+
+```{r inputSane}
+df_long_Sane<-read.csv(file.path(root, "meta/Sane_data.csv"))
+```
+
+The data frame was kindly provided by Mrudula Sane and Deepa Agashe and contains three columns `abs_gr_1`, `abs_gr_2`, `abs_gr_3` which are the three replicate growth rate estimates for each line.  `cognate_anc_gr` is the estimated growth rate of that line's immediate ancestor (presumably the average of three replicates). The `rel_gr` column is the relative growth rate as used in the paper which is the average value of the `abs_gr` variables,  divided by `cognate_anc_gr` (note this is equal to $1+(r_i-r_w)/r_w$).
+
+We can turn this wide-format data-frame into long format with the three absolute growth rates appearing in the single column (`gr`):
+
+
+```{r }
+df_Sane <- df_long_Sane[,c('mutation_id',"abs_gr_1", "abs_gr_2", "abs_gr_3","cognate_anc_gr", "transfer")] %>%
+    pivot_longer(
+        cols = c("abs_gr_1", "abs_gr_2", "abs_gr_3"),
+        names_to = "replicate",
+        values_to = "gr"
+    )
+```
+
+Ideally, we would have information of the replicate estimates that formed each `cognate_anc_gr` in order to model uncertainty in $r_w$. It would also have been good to know the line identity of the immediate ancestor, since the line may itself have acquired a single mutation from a more distant ancestor. Since this information is not available we will analyse $ln(2)(r_m-r_w)/r_w$
+
+```{r SaneFitness_model}
+df_Sane=df_Sane %>% mutate(s =log(2)*(gr-cognate_anc_gr)/cognate_anc_gr)
+
+m1_Sane<-lmer(s~(1|mutation_id),data=df_Sane)
+```
+
+```{r SaneSummary}
+summary(m1_Sane)
+```
+
+The mean of the DFE (the intercept) exceeds zero by some margin and the variance of the DFE is also substantial and highly significant:
+
+```{r }
+anova(m1_Sane, lm(s~1,data=df_Sane))
+```
+
+ Part of the between-line variance will be driven by the fact that the same `cognate_anc_gr` value is used for each of the three replicate growth rates of a mutation. However, if we analyse the replicate growth rates of each line without normalising by the ancestors growth rate and generation time we still see substantial between-line variance. 
+
+```{r SaneFitness_model2}
+m2_Sane<-lmer(gr~(1|mutation_id),data=df_Sane)
+```
+
+```{r SaneSummary2}
+summary(m2_Sane)
+```
+
+We can also fit the model `m1_Sane` using Markov chain Monte Carlo:
+
+```{r sane_coefficient}
+
+m1_Sane_mcmc<-MCMCglmm(s~1, 
+                       random=~mutation_id, 
+                       data=df_Sane, 
+                       prior=list(R=IW(1,0.002), G=F(1,1000)), 
+                       longer=10,
+                      verbose=FALSE) 
+
+summary(m1_Sane_mcmc)
+```
+
+```{r confidenceIntervals, eval=rerun.confint, echo=FALSE}
+ci_m1=confint(m1, oldNames=FALSE)
+ci_m3=confint(m3, oldNames=FALSE)
+ci_m1_Sane=confint(m1_Sane, oldNames=FALSE)
+ci_m2_Sane=confint(m2_Sane, oldNames=FALSE)
+```
+
+```{r save, eval=save, echo=FALSE}
+save(m1,file=file.path(root,'models/m1.Rdata'))
+save(m2,file=file.path(root,'models/m2.Rdata'))
+save(m3,file=file.path(root,'models/m3.Rdata'))
+save(m4,file=file.path(root,'models/m4.Rdata'))
+save(m5,file=file.path(root,'models/m5.Rdata'))
+save(m6,file=file.path(root,'models/m6.Rdata'))
+save(m1_mcmc,file=file.path(root,'models/m1_mcmc.Rdata'))
+save(m1_Sane,file=file.path(root,'models/m1_Sane.Rdata'))
+save(m1_Sane_mcmc,file=file.path(root,'models/m1_Sane_mcmc.Rdata'))
+save(m2_Sane,file=file.path(root,'models/m2_Sane.Rdata'))
+
+# save confidence intervals
+save(ci_m1,file=file.path(root,'models/ci_m1.Rdata'))
+save(ci_m3,file=file.path(root,'models/ci_m3.Rdata'))
+save(ci_m1_Sane,file=file.path(root,'models/ci_m1_Sane.Rdata'))
+save(ci_m2_Sane,file=file.path(root,'models/ci_m2_Sane.Rdata'))
+```
