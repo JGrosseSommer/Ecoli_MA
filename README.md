@@ -7,6 +7,6 @@ The main script for mapping reads, calling variants and testing the accuracy of 
 
 Grosse-Sommer and Hadfield (2026) Selection bias in microbial mutation accumulation studies and the impact of colony growth [bioRxiv 2026.05.28.725302](https://doi.org/10.64898/2026.05.28.725302)
 
-Grosse-Sommer, Newman and Hadfield (2026) Fitness effects of new mutations are small and heavily confounded with non-genetic sources of variation in *Escherichia coli* [bioRxiv 2026.05.28.725302](https://doi.org/10.64898/2026.05.28.725302)
+Grosse-Sommer, Newman and Hadfield (2026) Fitness effects of new mutations are small and heavily confounded with non-genetic sources of variation in *Escherichia coli* [bioRxiv 2026.08.23.746582](https://www.biorxiv.org/content/10.64898/2026.08.23.746582v1)
 
 
