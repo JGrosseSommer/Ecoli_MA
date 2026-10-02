@@ -7,8 +7,9 @@ export ref=~/Work/Ecoli_MA/ref/GCF_000005845.2_ASM584v2_genomic.fna  # reference
 root=~/Work/Ecoli_MA                    # project root
 # -------------------------------------------------------------
 
+mkdir -p "$root"/filtered_bam
 mkdir -p "$root"/vcf
-# directory for writing vcf files
+# directories for writing filtered_bam and vcf files
 
 
 echo -e "\n=== VARIANT CALLING ==="
