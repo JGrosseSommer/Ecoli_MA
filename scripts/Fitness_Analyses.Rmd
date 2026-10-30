@@ -26,10 +26,12 @@ bibliography: /Users/jhadfiel/Work/Tex/library/JarLib.bib
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
-rerun.gr<-FALSE
+rerun.gr<-TRUE
 rerun.confint<-FALSE
 rerun.mcmc<-FALSE
-save<-FALSE
+rerun.newsim<-FALSE
+rerun.correction<-FALSE
+save<-FALSE   # save models/simulations if reran
 
 if(Sys.info()["nodename"]%in%c("sce-bio-c04553", "SCE-BIO-C07467", "S42-76R7VW5J")){
   root<-"/Users/jhadfiel/Work/Ecoli_MA"
@@ -48,6 +50,10 @@ if(!rerun.mcmc){
 if(!rerun.gr){
   if(!exists("df")){stop("rerun.gr=FALSE but 'df' does not exist")}
 }
+if(!rerun.newsim){
+ load(file.path(root,'models/newsim.Rdata'))
+}
+
 ```
 
 220 *Escherichia coli* lines underwent 36 days of mutation accumulation (MA), the time it takes to accumulate one mutation on average. The aim of the study was to estimate the distribution of fitness effects of new mutations (DFE) by measuring the growth rate of 188 of these lines and their common ancestor. Since the protocol also generated many lines that had accumulated no mutants, we could also estimate the distribution of fitness effects across genetically identical MA lines. We refer to this as the distribution of fitness effects due to environmental effects (EDFE) although acknowledge that we use the word 'environmental' to capture all systematic differences between lines not due to DNA mutations.
@@ -193,7 +199,7 @@ od_df <- subset(od_df, !highOD & !empty & !extra_empty)
 plot(OD~jitter(timepoint,2),data=od_df, pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
 ```
 
-# Growth Rate and Meta Data
+# Growth rate and meta data
 
 In order to get an estimate of the growth rate in the exponential phase we can use gcplyr [@Blazanin.2024]. The change in log OD is computed over consecutive time-points for each well and a rolling 3-timepoint average calculated:  
 
@@ -213,7 +219,7 @@ Since growth rates may be different in the inner wells, we can create a factor f
 df <- mutate(df, inner = as.numeric(!(row %in% c('A', 'H') | column %in% c(1, 12))))
 ```
 
-We can also add the number of mutations per line
+`scripts/Mutation_Calling.Rmd` details the pipeline in which mutations were identified, and the number of mutations per line can be added:
 
 ```{r number_mutations}
 mutations<-read.csv(file.path(root, "meta/real_mutations.csv"))
@@ -284,7 +290,7 @@ with(worst_four, mutation[match(levels(as.factor(line)), line)])
 
 # Models
 
-## Main Model
+## Main model
 
 We fit a linear mixed model to the growth rates with the aim of estimating the mean and variance of the distribution of fitness effects of new mutations (DFE).  We can divide the terms of the model into those that are biologically interesting:
 
@@ -674,7 +680,7 @@ ci_m1_Sane=confint(m1_Sane, oldNames=FALSE)
 ci_m2_Sane=confint(m2_Sane, oldNames=FALSE)
 ```
 
-```{r save, eval=save, echo=FALSE}
+```{r save_models, eval=save, echo=FALSE}
 save(m1,file=file.path(root,'models/m1.Rdata'))
 save(m2,file=file.path(root,'models/m2.Rdata'))
 save(m3,file=file.path(root,'models/m3.Rdata'))
@@ -692,3 +698,539 @@ save(ci_m3,file=file.path(root,'models/ci_m3.Rdata'))
 save(ci_m1_Sane,file=file.path(root,'models/ci_m1_Sane.Rdata'))
 save(ci_m2_Sane,file=file.path(root,'models/ci_m2_Sane.Rdata'))
 ```
+
+# Hidden mutations
+
+We interpret our estimate of $\sigma^2_E$ (the variance associated with the `(1|line)` term) as the variance due to non-genetic effects, and this would clearly be compromised if mutations were present in our putatively zero-mutation lines. Putatively zero-mutation lines may harbour mutations because of false-negative mutation calling, sample mix-ups and/or new mutations that arose after sequencing. 
+
+## Mutation calling errors and mix-ups
+
+In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call it. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round((17/(194/196)+7/(192/196)-24)/188, 4)` mutations per assayed line. We also resequenced twenty-two lines in order to assess whether had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=1/22$=`r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The average number of called mutations per line will then be close to the expected number of true positives which is 202/188=`round(202/188, 3)` among assayed lines. 
+
+To understand how omitted mutations contribute to the between line variance in putatively zero-mutant lines we can think about the number of omitted mutations in a line $\mathscr{O}$. The number of mutations in putatively zero-mutant line $i$ is
+
+\begin{equation}
+\mathscr{O}_i=(1-\delta)n^{(fn)}_{i}+\delta(n^{(tp)}_{j}+n^{(fn)}_{j})
+\end{equation}
+
+where $n^{(fn)}$ and $n^{(fn)}$ are the number of false-negative and true positive mutations in a line, and $\delta=1$ if line $i$ has been mixed up with line $j$ but is zero otherwise. Line $j$ is assumed to be a line drawn at random from all lines. The effect of these omitted mutations on a line's fitness is:
+
+\begin{equation}
+u^{(\mathscr{O})}_i=\sum_k^{\mathscr{O}_i} \beta_M+u^{(M)}_k
+\end{equation}
+
+If we take the expectation of this random sum we get the contribution of omitted mutations to the mean fitness of putatively zero-mutant lines
+
+\begin{equation}
+\begin{array}{rl}
+\beta_{\mathscr{O}}=&\beta_mE[\mathscr{O}]\\
+                    =&\beta_m\left((1-p_m)E[n^{(fn)}]+p_m(E[n^{(tp)}]+E[n^{(fn)}])\right)\\
+                    =&\beta_m\left(E[n^{(fn)}]+p_mE[n^{(tp)}]\right)\\
+\end{array}
+\end{equation}
+
+If we take the variance of the random sum we get the contribution of omitted mutations to the variance in fitness of putatively zero-mutant lines. Assuming the number of omitted mutations is independent of their effect, we can use the Blackwell-Girshick equation [@Blackwell.1979]:
+
+\begin{equation}
+\begin{array}{rl}
+\sigma^2_{\mathscr{O}}=&VAR(\mathscr{O})E[\beta_M+u^{(M)}]^2+E[\mathscr{O}]VAR(\beta_M+u^{(M)})\\
+                      =&VAR(\mathscr{O})\beta_M^2+E[\mathscr{O}]\sigma^2_M\\
+\end{array}
+\end{equation}
+
+
+$VAR(\mathscr{O})$ can be obtained using the law of total variance:
+
+\begin{equation}
+\begin{array}{rl}
+VAR(\mathscr{O}) =& E[VAR(\mathscr{O} | \delta)]+VAR(E[\mathscr{O} | \delta])\\
+\end{array}
+\end{equation}
+
+Assuming $n^{(tp)}$ and $n^{(fn)}$ are drawn from independent Poisson distributions then $E[\mathscr{O} | \delta=0]=VAR(\mathscr{O} | \delta=0)=E[n^{(fn)}]$ and $E[\mathscr{O} | \delta=1]=VAR(\mathscr{O} | \delta=1)=E[n^{(tp)}]+E[n^{(fn)}]$ to give:
+
+
+\begin{equation}
+\begin{array}{rl}
+VAR(\mathscr{O}) =& E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_M)E[n^{(tp)}]^2\\
+                 =& E[\mathscr{O}]+p_m(1-p_M)E[n^{(tp)}]^2\\
+\end{array}
+\end{equation}
+
+and so
+
+\begin{equation}
+\begin{array}{rl}
+\sigma^2_{\mathscr{O}}=&(E[n^{(fn)}]+p_mE[n^{(tp)}])(\beta_M^2+\sigma^2_M)+p_m(1-p_M)E[n^{(tp)}]^2\beta_M^2\\
+\end{array}
+\end{equation}
+
+
+
+```{r eval=FALSE, echo=FALSE}
+nsim<-1000000
+
+b_M<-0.5
+s2_M<-1
+p_m<-0.2
+Etp<-6
+Efn<-2
+
+
+delta<-rbinom(nsim, size=1, prob=p_m)
+nfn<-rpois(nsim, Efn)
+nj<-rpois(nsim, Efn+Etp)
+
+no<-(1-delta)*nfn+delta*nj
+
+u<-unlist(lapply(sapply(no, rnorm, mean=b_M, sd=sqrt(s2_M)), sum))
+
+var(u)
+var(no)*b_M^2+mean(no)*s2_M
+
+(Efn+p_m*Etp)*(b_M^2+s2_M)+(1-p_m)*p_m*(b_M*Etp)^2
+```
+
+```{r echo=FALSE}
+Efn<-(17/(194/196)+7/(192/196)-24)/188
+Etp<-202/188
+p_m<-1/22
+rho<-(1-p_m)*Etp/(Etp+Efn)
+tau_s<-25
+```
+
+
+Using our estimates of $E[n^{(fn)}]$=`r round(Efn, 4)`, $E[n^{(tp)}]$=`r round(Etp, 4)` and $p_m$=`r round(p_m,4)` we get $\beta_{\mathscr{O}}=\beta_m$ `r round(Efn+p_m*Etp, 4)` and $\sigma^2_{\mathscr{O}}=\sigma^2_M$ `r round(Efn+p_m*Etp, 4)` $+\beta_M^2$ `r round(Efn+p_m*Etp+(1-p_m)*p_m*Etp^2, 4)`.
+
+We do not know what the true values of $\beta_M$ and $\sigma^2_M$ but we do have estimates for them. However, these estimates will be biased when the number of putative mutations is not equal to the number of true mutations.  
+
+Since we assume both the mean and between-line variance scale linearly with the number of mutations, we can get an approximate expression for the bias from linear-regression theory: $E[\widehat{\beta_M}] = \rho \beta_M$ and  $E[\widehat{\sigma^2_M}] = \rho \sigma^2_M$ where $\rho$ is the regression of the number of true mutations ($n^{(tp)}+n^{(fp)}$) on the number of putative mutations:
+
+\begin{equation}
+\begin{array}{rl}
+\rho =& \frac{COV((1-\delta)(n^{(fn)}_{i}+n^{(tp)}_{i})+\delta(n^{(tp)}_{j}+n^{(fn)}_{j}), n^{(tp)}_{i}+n^{(fp)}_{i})}{VAR((1-\delta)(n^{(fn)}_{i}+n^{(tp)}_{i})+\delta(n^{(tp)}_{j}+n^{(fn)}_{j}))}\\
+=& \frac{(1-p_M)VAR(n^{(tp)})}{VAR(n^{(tp)}+n^{(fn)})}\\
+\end{array}
+\end{equation}
+
+Again, assuming the number of true-positives and false-negatives are independent and Poisson distributed this becomes:
+
+\begin{equation}
+\begin{array}{rl}
+\rho =& \frac{(1-p_M)E[n^{(tp)}]}{E[n^{(tp)}]+E[n^{(fn)}]}\\
+\end{array}
+\end{equation}
+
+
+We can then write the expected contribution of missed mutations to the mean and between-line variance in fitness in terms of expected estimates:
+
+\begin{equation}
+\begin{array}{rl}
+\beta_{\mathscr{O}}=&\frac{E[\widehat{\beta_M}]}{\rho}\left(E[n^{(fn)}]+p_mE[n^{(tp)}]\right)\\
+\end{array}
+\end{equation}
+
+and 
+
+\begin{equation}
+\begin{array}{rl}
+\sigma^2_{\mathscr{O}}=&(E[n^{(fn)}]+p_mE[n^{(tp)}])\left(\left(\frac{E[\widehat{\beta_M}]}{\rho}\right)^2+\frac{E[\widehat{\sigma^2_M}]}{\rho}\right)+p_m(1-p_M)E[n^{(tp)}]^2\left(\frac{E[\widehat{\beta_M}]}{\rho}\right)^2\\
+\end{array}
+\end{equation}
+
+Using our estimates of $\rho$=`r round(rho, 4)` we get $\beta_{\mathscr{O}}=E[\widehat{\beta_M}]$ `r round((Efn+p_m*Etp)/rho, 4)` and $\sigma^2_{\mathscr{O}}=E[\widehat{\sigma^2_M}]$ `r round((Efn+p_m*Etp)/rho, 4)` $+E[\widehat{\beta_M}]^2$ `r round((Efn+p_m*Etp+(1-p_m)*p_m*Etp^2)/rho^2, 4)`.
+
+
+## New mutations
+
+In the final round of MA a colony is grown from a single initial cell up to approximately x cells, this colony is frozen, and a sub-sample is taken and grown ..... Any mutation present in the initial cell will be called. Any new mutations that appear as the final colony grows, or between stock and sequencing, are extremely unlikely to be called since they would only be found in a small proportion of cells. However, new mutations that appear in the final colony, or between the final colony and the fitness assay stock, may in aggregate cause the fitness of the line to differ systematically from a zero-mutant line. Note that mutations that appear in each replicate after growing from the common stock will only contribute to the within-line (residual) variance and do not need to be considered.
+
+If we have $N_c$ as the number of cells in the final colony, and $N_1$ the number of cells which initiated the stock and $N_2$ the final number of cells in the stock, the number of cell divisions experienced by a cell is $\tau_s=log_2(N_c)+log_2(N_2)-log_2(N_1)$ assuming synchronous growth. From our MA lines the mutation rate per genome per generation was estimated to be $\mu_g=0.00105$ (see \citet{Lee2012RateSequencing} also) such that the expected number of mutations per line is $\tau_s\mu_g$. $log_2(N_c)$ is approximately 28 \citet{Lee2012RateSequencing} and $log_2(N_2)-log_2(N_1)$ is approximately 32 such that $\tau_s\mu_g=$ `r round(0.00105*60,3)`. If the number of mutations per cell is Poisson distributed only a small proportion of cells will have new mutations  $1-e^{-\tau_s\mu_g}=$ `r round(1-exp(-0.00105*60),3)` and of those, `r round(100*dpois(1, 0.00105*60)/(1-dpois(0, 0.00105*60)))`\% will only carry a single mutation. Note the average number of cell divisions experienced by cells in the final colony will exceed $log_2(N_c)$ since colony growth is asymmetric [@Gralka.2016] which will mean $\tau_s$ is underestimated and $\mu_g$ is overestimated since $log_2(N_c)$ is used to convert the number of accumulated mutations into a rate per generation [@GrosseSommer.2026a]. 
+
+To understand how these new mutations contribute to the between line variance we can think about the number of new mutations (as opposed to the number of mutants) in a line, $\mathscr{M}$, and the number of cells that carry each of those mutations, a mutation's clone size. For new mutation $k$, the clone size is $NP_k$ where N is the total number of cells and $P_k$ the proportion of cells that carry mutation $k$.  The aggregate effect of new mutations on line $i$'s fitness is then a sum of each mutations fitness effect ($\beta_M+u^{(M)}_k$) weighted by the frequency of that mutation, $P_k$:
+
+$$u^{(\mathscr{M})}_i=\sum^\mathscr{M}_k P_k(\beta_M+u^{(M)}_k)$$
+
+ The variance of this sum across lines is the contribution of new mutations to the between-line variance in putatively zero-mutant lines, which we will designate as $\sigma^2_\mathscr{M}$. The variance of this sum can be approximated by the Blackwell-Girshick equation [@Blackwell.1979]. 
+
+$$\sigma^2_\mathscr{M}=E[\mathscr{M}]VAR(P(\beta_M+u^{(M)}))+E[P(\beta_M+u^{(M)})]^2VAR(\mathscr{M})$$
+
+It is only approximate because the number of mutations in a line cannot be independent of the proportions, but the approximation should work well when mutations are rare. Under a neutral model, $P$ and $\beta_M+u^{(M)}$ are uncorrelated and so the variance of $P(\beta_M+u^{(M)})$ is $VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2$. Putting this together we have,
+
+$$\sigma^2_\mathscr{M}=E[\mathscr{M}][VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2]+E[P]^2\beta_M^2VAR(\mathscr{M})$$. 
+
+If mutations arise from a Poisson process then $VAR(\mathscr{M})=E[\mathscr{M}]$ and we get
+
+\begin{equation}
+\begin{array}{rl}
+\sigma^2_\mathscr{M}=&E[\mathscr{M}](VAR(P)+E[P]^2)(\sigma^2_M+\beta_M^2)\\
+                    =&E[\mathscr{M}]E[P^2](\sigma^2_M+\beta_M^2)\\
+\end{array}
+\end{equation}
+
+@Lea.1949 give the probability mass function for a mutation's clone size under synchronous growth given the total population size:
+
+$$Pr(PN=\nu | N)=\frac{1}{\nu(\nu+1)}$$. 
+
+Since $PN$ cannot exceed $N$ we can compute
+
+$$E[(PN)^2 | N] = \int_0^N\nu^2\frac{1}{\nu(\nu+1)}d\nu= N-ln(N+1)$$
+
+such that $E[P^2]=\frac{1}{N}-\frac{ln(N+1)}{N^2}$ and
+
+$$\sigma^2_\mathscr{M}=E[\mathscr{M}]\left(\frac{1}{N}-\frac{ln(N+1)}{N^2}\right)(\sigma^2_M+\beta_M^2)$$
+
+In a population of $N$ cells there has been $N$ fission events which means $E[\mathscr{M}]=N\mu_g$ where $\mu_g$ is the number of mutations per genome per generation. The contribution of new mutations to the between-line variance is therefore: 
+
+$$\sigma^2_\mathscr{M}=\mu_g\left(1-\frac{ln(N+1)}{N}\right)(\sigma^2_M+\beta_M^2)$$
+
+Since $ln(N+1)/N$ is so much smaller than one when $N$ is large this is approximately
+
+$$\sigma^2_\mathscr{M}\approx\mu_g[\sigma^2_M+\beta_M^2]$$
+
+Perhaps surprisingly, the contribution of new mutations to the between-line variance does not depend on the total number of cells and therefore the number of generations that have elapsed, $\tau_s$. The effect of new mutations on the mean fitness of zero-mutant lines, however, does depends on $N$ and therefore $\tau_s$. Given the expected number of mutations per cell us $\mu_g\tau_s$, the contribution of the new mutations to the expected fitness in putatively zero-mutant lines is
+
+
+$$\beta_\mathscr{M}=\beta_M\mu_g\tau_s$$
+
+We can also derive this using the results of @Lea.1949:
+
+$$\beta_\mathscr{M}=E[u^{(\mathscr{M})}]=\beta_ME[\mathscr{M}]E[P]$$
+
+Since 
+
+$$E[PN | N] = \int_0^N\nu\frac{1}{\nu(\nu+1)}d\nu= ln(N+1)$$
+
+we get
+
+$$\beta_\mathscr{M}=\beta_MN\mu_g\frac{ln(N+1)}{N}=\beta_M\mu_gln(N+1)$$. 
+
+This differs from $\beta_M\mu_g\tau_s$ by approximately a factor $ln(2)$. This is likely due to the Lea–Coulson approximation assuming mutant cells grow stochastically according to a Yule process rather than deterministic synchronous growth.  
+
+We can check these results though simulation. `sim_new` is a function that simulates a population that doubles `ngen` times. At each cell division the two sister cells acquire mutations sampled from a Poisson with mean $mu_g$. The mutations add an increment to the cell's original fitness with the increments sample from a normal with mean `b_M` and variance `s2_M`:
+
+<div class="fold s">
+```{r sim_new}
+
+sim_new<-function(ngen, mu_g, b_M, s2_M){
+
+  N<-2^ngen
+  w<-rep(0, N)
+
+  for(j in 1:ngen){
+
+      Njm1<-2^(j-1)
+      w[Njm1+1:Njm1]<-w[1:Njm1]  # assign 'parent' fitness to 'offspring'
+
+      nmu<-rpois(1, mu_g*2^j)      # determine total number of mutations
+      
+      if(nmu>0){
+        mu_pos<-sample(1:(2^j), nmu) 
+        # determine the cells in which mutations happen (note double mutants not allowed)
+        
+        w[mu_pos]<-w[mu_pos]+rnorm(nmu, b_M, sqrt(s2_M))
+        # update cell's fitness
+      }
+
+  }
+  return(w)
+}  
+```
+</div>
+
+We can take the average fitness of cells in a line, and by simulating a large number of lines (2,000) that have been propagated for varying numbers of generations ($\tau_s$ from 1 to 25) we can compute the relevant measures ($\beta_\mathscr{M}$, $\sigma^2_\mathscr{M}$, $E[P]$ and $E[P^2]$) and compare them against the theoretical expectations. We use $\mu_g=0.001$, $\beta_M=0.1$ and $\sigma^2_M=1$:
+
+
+<div class="fold s">
+```{r newsim,  eval=rerun.newsim}
+
+max_ngen<-25
+nlines<-2000
+mu_g<-0.001
+b_M<-0.1
+s2_M<-1
+
+newsim<-matrix(NA, max_ngen, 5)
+colnames(newsim)<-c("tau", "Ew", "Vw", "EP", "EP2")
+newsim[,"tau"]<-1:max_ngen
+
+for(ngen in 1:max_ngen){
+
+    res<-matrix(NA, nlines, 4)
+    colnames(res)<-c("Ew", "EP", "EP2")
+
+    for(i in 1:nlines){
+
+      w<-sim_new(ngen mu_g=mu_g, b_M=b_M, s2_M=s2_M)
+
+      res[i,"Ew"]<-mean(w)  # mean fitness of cells 
+
+      P<-table(w)/N
+      P<-P[-which(names(P)=="0")]
+
+      res[i,"EP"]<-mean(P)    # mean colony size of mutations
+      res[i,"EP2"]<-mean(P^2) # mean squared colony size of mutations
+    }
+
+    newsim[ngen, "Ew"]<-mean(res[,"Ew"], na.rm=TRUE)   # mean fitness across lines 
+    newsim[ngen, "Vw"]<-var(res[,"Ew"], na.rm=TRUE)    # variance in fitness across lines
+    newsim[ngen, "EP"]<-mean(res[,"EP"], na.rm=TRUE)   # mean colony size across lines
+    newsim[ngen, "EP2"]<-mean(res[,"EP2"], na.rm=TRUE) # mean squared colony size across lines
+
+    newsim<-as.data.frame(newsim)
+}
+```
+</div>
+
+
+```{r save_sim, eval=save, echo=FALSE}
+if(rerun.newsim){
+  save(newsim, file=file.path(root,'models/newsim.Rdata'))
+}
+```
+
+```{r eval=!rerun.newsim, echo=FALSE}
+mu_g<-0.001
+b_M<-0.1
+s2_M<-1
+load(file.path(root,'models/newsim.Rdata'))
+```
+
+We can plot the results of the simulation and overlay our theoretical predictions, which look adequate
+
+```{r newsim_plot, fig.width = 7,fig.height = 7}
+
+newsim$N<-2^newsim$tau
+
+par(mfrow=c(2,2), mar=c(5, 5, 0.5, 2)+0.1, bty="l")
+
+plot(Ew~tau, data=newsim, ylab=expression(beta[italic(M)]), xlab=expression(tau[s]), cex.lab=1.5)
+lines(mu_g*b_M*log(N+1)~tau, data=newsim, col="red")
+lines(mu_g*b_M*log(N, base=2)~tau, data=newsim, col="blue")
+
+plot(Vw~tau, data=newsim, ylab=expression(sigma[italic(M)]^2), xlab=expression(tau[s]), cex.lab=1.5)
+abline(h=mu_g*(s2_M+b_M^2), col="red")
+lines(mu_g*(1-log(N+1)/N)*(s2_M+b_M^2)~tau, data=newsim, col="blue")
+
+plot(EP~tau, data=newsim, ylab=expression(paste("E[", P, "]")), xlab=expression(tau[s]), cex.lab=1.5)
+lines(log(N+1)/N~tau, data=newsim, col="red")
+
+plot(EP2~tau, data=newsim, ylab=expression(paste("E[", P^2, "]")), xlab=expression(tau[s]), cex.lab=1.5)
+lines(I((1/N)-log(N+1)/N^2)~tau, data=newsim, col="red")
+```
+
+As we did for false negatives and mix-ups we can write the contribution of new mutations in terms of expected estimates (note that new mutations, like false-negatives do not result in attenuated estimates):
+
+
+$$\beta_\mathscr{M}=\frac{E[\widehat{\beta_M}]}{\rho}\mu_g\tau_s$$
+
+
+$$\sigma^2_\mathscr{M}=\mu_g\left(\frac{E[\widehat{\sigma^2_M}]}{\rho}+\left(\frac{E[\widehat{\beta_M}^2]}{\rho}\right)^2\right)$$
+
+
+Giving $\beta_\mathscr{M}=E[\widehat{\beta_M}]$ `r round(mu_g*tau_s/rho, 4)` and $\sigma^2_\mathscr{M}=E[\widehat{\sigma^2_M}]$ `r round(mu_g/rho, 4)` $+E[\widehat{\beta_M}]^2$ `r round(mu_g/rho^2, 4)`.
+
+
+## Bias correction
+
+The expected between-line variance is 
+
+\begin{equation}
+\begin{array}{rl}
+\sigma^2_L =&\rho(n^{(tp)}+n^{(fp)})\sigma^2_M+\mu_g(\beta_M^2+\sigma^2_M)+(E[n^{(fn)}]+p_mE[n^{(tp)}])(\beta_M^2+\sigma^2_M)+p_m(1-p_m)E[n^{(tp)}]^2\beta_M^2+\sigma^2_E\\
+
+\sigma^2_L =&\left(\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\right)\sigma^2_M+\left(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2+\sigma^2_E\\
+
+\end{array}
+\end{equation}
+
+The expected mean fitness is 
+
+\begin{equation}
+\begin{array}{rl}
+\beta_L=&\beta_M(\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\tau_s)\\
+\end{array}
+\end{equation}
+
+
+Using glmmTMB and optim we can fit this model using maximum-likelihood
+
+<div class="fold s">
+```{r m_correction}
+
+m_correction<-function(formula, n, data, ngen=ngen, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m){
+
+  m1<-glmmTMB(formula,  data=data)
+
+  ff<-as.character(formula)
+  ff<-gsub(n, "", ff)
+  ff<-gsub("sqrt\\(\\)", "sqrt(new_sqrtn)", ff)
+  ff<-as.formula(paste(ff[c(2,1,3)], collapse=""))
+  ff<-update(ff, .~new_n+(1|line2)+.)
+  # add new_n as the first fixed predictor and line2 as the first set of random effects
+
+  rho<-(1-p_m)*Etp/(Etp+Efp)
+
+  data[,"new_n"]<-(rho*data[,n]+Efn+p_m*Etp+mu_g*ngen)
+   
+  data[,"new_sqrtn"]<-sqrt(rho*data[,n]+mu_g+Efn+p_m*Etp)
+
+  data[,"line2"]<-data$line
+
+  nLL<-function(bM, data, m1, n, formula, mu_g, Etp, Efn, p_m, nLLonly=TRUE){
+
+     bMbias<-(mu_g+Efn+p_m*Etp+p_m*(1-p_m)*(Etp^2))*bM^2
+
+     beta_start<-fixef(m1)$cond[-which(names(fixef(m1)$cond)==n)]
+     beta_start<-c(beta_start[1], bM, beta_start[-1])
+
+     beta_map<-as.factor(1:length(beta_start))
+     beta_map[2]<-NA
+
+     theta_start<-c(bMbias, log(sqrt(unlist(VarCorr(m1)))))
+     theta_map<-as.factor(1:length(theta_start))
+     theta_map[1]<-NA
+
+     m2<-glmmTMB(formula,  data=data, REML=FALSE, start = list(beta=beta_start, theta = theta_start),map = list(beta=beta_map, theta = theta_map))
+
+     if(nLLonly){
+        return(m2$fit$objective)
+     }else{
+        return(m2)
+     }
+  }
+
+  bM<-optim(bM=fixef(m1)$cond[n], nLL, data=data, n=n, m1=m1, formula=ff, mu_g=mu_g, Etp=Etp, Efn=Efn, p_m=p_m, hessian=FALSE)$par
+
+  return(nLL(bM=bM, data=data, mu_g=mu_g, Etp=Etp, Efn=Efn, p_m=p_m, nLLonly=FALSE))
+}
+
+
+m_correct<-m_correction(gr~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, ngen=ngen, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+
+
+```
+
+We can set using
+
+```{r }
+mu_g<-0.01
+ngen<-20
+nlines<-188
+nrep<-14
+b_M<-0.5
+s2_M<-1
+s2_E<-0.5
+s2_e<-0.01
+
+p_m<-0.2
+Etp<-1
+Efn<-0.2
+Efp<-0.1
+```
+
+<div class="fold s">
+```{r sim_correction, eval=rerun.correction}
+nsim<-1000
+
+estsim<-matrix(NA, nsim, 6)
+
+colnames(estsim)<-c("b_M.1", "s2_E.1", "s2_M.1", "b_M.2", "s2_E.2", "s2_M.2")
+
+for(i in 1:nsim){
+
+  delta<-rbinom(nlines, size=1, prob=p_m)
+
+  nfn<-rpois(nlines, Efn)
+  ntp<-rpois(nlines, Etp)
+  nfp<-rpois(nlines, Efp)
+
+  nj<-rpois(nlines, Etp+Efp)            # Observed mutations given a mix-up
+
+  n_true<-ntp+nfn                       # True mutations 
+  n_obs<-(1-delta)*(ntp+nfp)+delta*nj   # Observed mutations   
+
+  line_mean<-unlist(lapply(sapply(n_true, rnorm, mean=b_M, sd=sqrt(s2_M)), sum)) 
+  # effect of true mutations
+  line_mean<-line_mean+rnorm(nlines, 0, sqrt(s2_E))
+  # effect of line environment
+
+  for(j in 1:nlines){
+    line_mean<-line_mean+mean(sim_new(ngen, mu_g, b_M, s2_M))
+    # add the contribution of new mutations
+  }
+
+  y<-sapply(line_mean, function(x){rnorm(nrep, x, sqrt(s2_e))})
+  # generate nrep replicates per line and add noise
+
+  dat<-data.frame(y=c(y), line=as.factor(rep(1:nlines, each=nrep)), n_obs=rep(n_obs, each=nrep))
+
+  dat$sqrtn<-sqrt(dat$n_obs)
+
+  m1<-glmmTMB(y~n_obs+(1|line)+(sqrtn-1|line), data=dat)
+
+  m2<-m_correction(data=dat, ngen=ngen, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+
+  estsim[i,]<-c(fixef(m1)$cond["n_obs"], unlist(VarCorr(m1)$cond), fixef(m2)$cond["new_n"], unlist(VarCorr(m2)$cond)[c("line", "line.1")])
+
+  print(i)
+
+}
+```
+
+```{r save_sim2, eval=save, echo=FALSE}
+if(rerun.correction){
+  save(estsim, file=file.path(root,'models/estsim.Rdata'))
+}
+```
+</div>
+
+```{r eval=!rerun.estsim, echo=FALSE}
+load(file.path(root,'models/estsim.Rdata'))
+```
+
+We can start by plotting the naive estimates, with true values in blue and their expected (biased) values in red:
+
+
+```{r estsim_plot1, fig.width = 6, fig.height = 12}
+par(mfrow=c(3,1))
+hist(est[,"b_M.1"], xlab=expression(hat(beta[M]))
+abline(v=b_M, col="blue")
+abline(v=rho*b_M, col="red")
+hist(est[,"s2_M.1"], xlab=expression(hat(sigma[M]^2))
+abline(v=s2_M, col="blue")
+abline(v=rho*s2_M, col="red")
+hist(est[,"s2_E.1"], xlab=expression(hat(sigma[E]^2))
+abline(v=s2_E, col="blue")
+abline(v=s2_E+(b_M^2+s2_M)*(mu_g+Efn+p_m*Etp)+p_m*(1-p_m)*(Etp^2)*b_M^2, col="red")
+```
+
+There are substantial biases in the estimates and these are well predicted by our theoretical expectations. We can also look at the estimates from the model that tries to accommodate mutation calling errors, mix-ups and new mutations, again, with true values in blue.
+
+```{r estsim_plot2, fig.width = 6, fig.height = 12}
+par(mfrow=c(3,1))
+hist(est[,"b_M.2"], breaks=30, xlab=expression(hat(beta[M]))
+abline(v=b_M, col="blue")
+hist(est[,"s2_M.2"], breaks=30, xlab=expression(hat(sigma[M]^2))
+abline(v=s2_M, col="blue")
+hist(est[,"s2_E.2"], breaks=30, xlab=expression(hat(sigma[E]^2))
+abline(v=s2_E, col="blue")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

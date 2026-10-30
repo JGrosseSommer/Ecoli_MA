@@ -4,16 +4,17 @@ set -euo pipefail
 # ------------- USER SETTINGS ---------------------------------
 bwa_threads=8
 export ref=~/Work/Ecoli_MA/ref/GCF_000005845.2_ASM584v2_genomic.fna # reference genome
-root=~/Work/Ecoli_MA                                                # project root
+root=~/Work/Ecoli_MA      # project root
+run=original_sequencing   # original_sequencing or resequencing
 # -------------------------------------------------------------
 
 if [[ ! -f ${ref}.bwt ]]; then bwa index  "$ref"; fi
 if [[ ! -f ${ref}.fai ]]; then samtools faidx "$ref"; fi
 # create bwa and fai index files for the reference genome if they do not exist
 
-mkdir -p "$root"/bam  # directory for storing bam files  
+mkdir -p "$root"/bam/"$run"  # directory for storing bam files  
 
-raw="$root"/raw  # location of fastq files (separate directories per sample)
+raw="$root"/raw/"$run"  # location of fastq files (separate directories per sample)
 
 echo -e "\n=== ALIGNMENT ==="
 
@@ -21,7 +22,7 @@ for dir in "$raw"/*/ ; do                     # every sample folder
     [[ -d $dir ]] || continue                 # check dir is a directory
 
     sample=${dir#"$raw"/} ; sample=${sample%/}  # get sample name
-    bam=$root/bam/${sample}.bam                 # output bam file name
+    bam=$root/bam/$run/${sample}.bam                 # output bam file name
     [[ -f $bam ]] && { echo "SKIPPED: $sample already aligned" ; continue ; } # skips sample if bam file already exists
 
     r1=$(find "$dir" -maxdepth 1 -name '*_R1*.fastq.gz' -print -quit)

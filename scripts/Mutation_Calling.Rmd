@@ -39,11 +39,11 @@ sim_mutations<-FALSE
 save<-FALSE
 ```
 
-In this workbook we detail the workflow for mapping reads and calling, validating and annotating variants in 194 *E. coli* mutation accumulation lines and two replicates of their common ancestor. The raw reads can be found on NCBI's SRA (see [BioProject ID PRJNA1466858](https://www.ncbi.nlm.nih.gov/sra?LinkName=bioproject_sra_all&from_uid=1466858)). A root directory needs to be specified (`~/Work/Ecoli_MA`) and within that directory a subdirectory called raw should exist. The fasta files are to large to be hosted on GitHib but can be downloaded from NCBI's Sequence Read Archive under BioProject ID PRJNA1466858. They should be placed in the raw directory with the fasta files for each library contained within its own subdirectory. The subdirectory should be named after the sample. The sample name is the leading text of the SRA Name field prior to the sequence and the MA line is listed in the SRA Title field (e.g the first SRA is sample 270-94 corresponding to MA Line 26). Details about the samples can be found in meta/sample_submission.csv.
+In this workbook we detail the workflow for mapping reads and calling, validating and annotating variants in 194 *E. coli* mutation accumulation lines and two replicates of their common ancestor.  The raw reads can be found on NCBI's SRA (see [BioProject ID PRJNA1466858](https://www.ncbi.nlm.nih.gov/sra?LinkName=bioproject_sra_all&from_uid=1466858)). A root directory needs to be specified (`~/Work/Ecoli_MA`) and within that directory a subdirectory called `raw/original_sequencing` should exist. The fasta files are to large to be hosted on GitHib but can be downloaded from NCBI's Sequence Read Archive under BioProject ID PRJNA1466858. They should be placed in the `raw/original_sequencing` directory with the fasta files for each library contained within its own subdirectory. The subdirectory should be named after the sample. The sample name is the leading text of the SRA Name field prior to the sequence and the MA line is listed in the SRA Title field (e.g the first SRA is sample 270-94 corresponding to MA Line 26). Details about the samples can be found in meta/sample_submission.csv. Twenty-two lines were also resequenced at a later date and their reads are mapped and variants called. 
 
 # Mapping Reads
 
-The reads are mapped to the specified reference genome (NCBI RefSeq accession NC\_000913.3, assembly GCF\_000005845.2 (ASM584v2)) using bwa [@Li.2013]. bam files are stored in a subdirectory of root called bam.  If the bam file for a sample exists mapping will be skipped.  The bash script map.sh (in the scripts subdirectory of root) is shown below.
+The reads are mapped to the specified reference genome (NCBI RefSeq accession NC\_000913.3, assembly GCF\_000005845.2 (ASM584v2)) using bwa [@Li.2013]. bam files are stored in a subdirectory of root called `bam/original_sequencing`.  If the bam file for a sample exists mapping will be skipped.  The bash script map.sh (in the scripts subdirectory of root) is shown below.
 
 <div class="fold s">
 ```{r show_map, echo = FALSE, results = 'asis'}
@@ -130,7 +130,7 @@ Then we work through each vcf file, extract the relevant information and annotat
 <div class="fold s">
 ```{r process_vcf, eval=process_vcf, message=FALSE, warning=FALSE}
 
-vcf_files<-list.files(file.path(root, "vcf"))
+vcf_files<-list.files(file.path(root, "vcf/original_sequencing"))
 vcf_files<-vcf_files[grep(".flt.vcf.gz$", vcf_files)]
 # get a list filtered vcf file names 
 
@@ -146,7 +146,7 @@ vcf_dt<-c()
 
 for(i in 1:length(vcf_files)){
 
-	file.i<-file.path(root, "vcf", vcf_files[i])
+	file.i<-file.path(root, "vcf/original_sequencing", vcf_files[i])
 	vcf <- readVcf(file.i)
 	# read in the filtered vcf file
 
@@ -321,7 +321,7 @@ The mutations
 
 310-142 2185868 T->TG
 
-were all deemed real, but sample 310-142 has 17 additional mutations, one in the mismatch repair gene *mutS*. There's no sign of contamination - it seems like these mutations occurred after the conclusion of mutation accumulation but during the growth stage prior to sequencing. 
+were all deemed real, but sample 310-142 has 17 additional mutations, one in the mismatch repair gene *mutS*. There's no sign of contamination and these mutations occurred after the conclusion of mutation accumulation but during the growth stage prior to sequencing. 
 
 The remaining mutations were all deemed correct. In most cases the INDEL fell in a repetitive region and the reads supporting the reference did not span sufficient repeats to call the mutation.
 
@@ -609,3 +609,229 @@ strict
 ```
 
 Almost all mutations are called
+
+# Resequencing
+
+The original samples were sent for sequencing in June 2022. In September 2026, 22 lines were resequenced in order to confirm that the line identities for the fitness assays match the line identities for the original sequencing.
+
+```{r message=FALSE, warning=FALSE}
+sample_line_reseq<-read.csv(file.path(root, "meta/reseq_lines.csv"))
+sample_line_reseq<-subset(sample_line_reseq, grepl("JULIE", line))
+sample_line_reseq$line<-gsub("JULIE", "", sample_line_reseq$line)
+# meta-data for reseq samples 
+```
+
+We chose a set of lines that were distributed across the original sequencing plates (red squares indicate the plate and position of resequenced lines in the original sequencing):
+
+
+<div class="fold s">
+```{r message=FALSE, warning=FALSE, fig.width = 7,fig.height = 10}
+plate<-gsub("PLATE", "", sample_line$Plate.name[match(sample_line_reseq$line, sample_line$Sample.name)])
+row<-match(substr(sample_line$Plate.position, 1, 1)[match(sample_line_reseq$line, sample_line$Sample.name)], LETTERS[1:8])
+column<-as.numeric(substr(sample_line$Plate.position, 2, nchar(sample_line$Plate.position))[match(sample_line_reseq$line, sample_line$Sample.name)])
+
+par(mfrow=c(2,1))
+plot(1, type="n", xlim=c(0,12), ylim=c(0,8), xaxt = "n", xlab="Column", ylab="Row", yaxt = "n", main="Plate 1")
+axis(1, at = 0.5+0:11, labels=1:12)
+axis(2, at = 0.5+0:7, labels =LETTERS[1:8])
+
+for(i in which(plate==1)){
+  polygon(c(column[i]-1, column[i], column[i], column[i]-1), c(row[i]-1, row[i]-1, row[i], row[i]), col="red")
+}
+
+plot(1, type="n", xlim=c(0,12), ylim=c(0,8), xaxt = "n", xlab="Column", ylab="Row", yaxt = "n", main="Plate 2")
+axis(1, at = 0.5+0:11, labels=1:12)
+axis(2, at = 0.5+0:7, labels =LETTERS[1:8])
+
+for(i in which(plate==2)){
+  polygon(c(column[i]-1, column[i], column[i], column[i]-1), c(row[i]-1, row[i]-1, row[i], row[i]), col="red")
+}
+```
+</div>
+
+
+The reqsequencing reads can be placed in `raw/resequencing` and by changing `run` to `resequencing` in map.sh and call.sh the reqsequencing reads can be mapped and variants called. We can use the same pipeline to process the vcf files:
+
+
+<div class="fold s">
+```{r process_reseq_vcf, eval=process_vcf, message=FALSE, warning=FALSE}
+
+vcf_files<-list.files(file.path(root, "vcf/resequencing"))
+vcf_files<-vcf_files[grep(".flt.vcf.gz$", vcf_files)]
+# get a list filtered vcf file names 
+
+sample<-unlist(lapply(strsplit(vcf_files, "_|\\."), function(x){x[1]}))
+# get the sample names from the vcf file names. 
+
+line<-sample_line_reseq$line[match(unlist(lapply(strsplit(sample, "_"), function(x){x[1]})), sample_line_reseq$sample_id)]
+# get the MA line names associated with each sample. 
+
+vcf_reseq_dt<-c()
+
+for(i in 1:length(vcf_files)){
+
+  file.i<-file.path(root, "vcf/resequencing", vcf_files[i])
+  vcf <- readVcf(file.i)
+  # read in the filtered vcf file
+
+  vr  <- granges(vcf)                         # get the coordinates of the variants
+
+  is_cds<-countOverlaps(vr, cds_gr)>0
+  is_pseudo<-countOverlaps(vr, pseudo_gr)>0
+  is_rrna<-countOverlaps(vr, rrna_gr)>0
+  is_is<-countOverlaps(vr, is_gr)>0
+
+  # evaluate whether the variants overlap coding sequence, 
+  # pseudogenes, rrna genes and insertion sequences.
+
+  coding <- predictCoding(vcf, txdb, seqSource = fa)
+  # gets coding mutation types (synonymous, non-synonymous, )
+
+  mini_vcf<-fread(file.i, sep = "\t", header = TRUE, skip = "#CHROM")
+  # read vcf into a data.table
+
+  n_ref<-as.vector(sapply(mini_vcf$INFO, function(x){sum(as.numeric(strsplit(strsplit(x, "DP4=|;MQ=")[[1]][2], ",")[[1]])[1:2])}))
+  n_alt<-as.vector(sapply(mini_vcf$INFO, function(x){sum(as.numeric(strsplit(strsplit(x, "DP4=|;MQ=")[[1]][2], ",")[[1]])[3:4])}))
+  # get number of reads in support of the reference and alternate allele
+
+  is_nonsyn<-gene<-locus_tag<-rep(NA, length(names(vcf)))
+  # empty vector for writing mutation type and gene name for mutations in coding sequence
+
+  is_nonsyn[match(names(coding), names(vcf))]<-as.character(coding$CONSEQUENCE)
+  # writes mutation type for mutations in coding sequence
+
+  hits    <- findOverlaps(vr, gene_gr)
+  # finds overlap between variant coordinates and genes
+
+  gene[queryHits(hits)] <- unlist(gene_gr$Name[subjectHits(hits)])
+  locus_tag[queryHits(hits)] <- unlist(gene_gr$locus_tag[subjectHits(hits)])
+  # writes gene name for mutations falling in genes 
+
+  vcf_reseq_dt <- rbind(vcf_reseq_dt, cbind(sample[i], line[i], is_cds, is_nonsyn, is_pseudo, is_rrna, is_is, gene, locus_tag, mini_vcf$QUAL, n_ref, n_alt, mini_vcf[,c(2,4,5)]))
+
+  # consolidate information into a data.frame 
+}
+
+colnames(vcf_reseq_dt)[1:12]<-c("sample", "line", "coding", "type", "pseudo", "rrna", "is", "gene", "locus_tag", "QUAL", "n_ref", "n_alt")
+```
+</div>
+
+
+We can start by removing the ancestral mutations, mutations at sites with low quality, and any mutations in insertion sequence, rRNA genes and the *icd* gene. In the original sequencing this filtering resulted in a set of mutations that were almost identical to that obtained after manually checking mutations with low read support.  
+
+
+```{r message=FALSE, warning=FALSE}
+vcf_reseq_dt_qual<-subset(vcf_reseq_dt, !POS%in%orig_mut & QUAL>20 & !(is | rrna) & (is.na(gene) | gene!="icd"))
+```
+
+## Do we find any 'new' mutations?  *No*
+
+We find that the positions of all but seven mutations appear as mutated sites in the original sequencing 
+
+```{r message=FALSE, warning=FALSE}
+matches_in_orig<-match(vcf_reseq_dt_qual$POS, mutations_real$POS)
+table(is.na(matches_in_orig))
+```
+
+Five of the mutations that that did not appear in the original sequencing were all from line 95 
+
+
+```{r message=FALSE, warning=FALSE}
+table(vcf_reseq_dt_qual$line[which(is.na(matches_in_orig))])
+```
+
+Line 95 was a line that acquired a hypermutator early on.  The five mutations were called in the original sequencing but deemed to have occurred during the pre-seqeuncing growth phase since there were quite a few reads in support of the reference allele. Given these mutations appear here, in the cultures used for the growth assays, indicates that they in fact arose prior to the pre-sequencing growth phase. Indeed, all of the line 95 mutations in the repeat sequencing were listed as possible mutations originally: 
+
+
+```{r}
+table(!is.na(match(subset(vcf_reseq_dt_qual, line==95)$POS, vcf_reseq_dt_qual$POS)))
+```
+
+If we look at the five mutations that were excluded originally:
+
+```{r}
+subset(vcf_reseq_dt_qual, line==95 & !POS%in%mutations_real$POS)
+```
+
+all are INDELS and so the support for the reference allele probably comes from ambiguity as to the INDEL position in a repetitive region. 
+
+The additional mutation in line 122 (at position 4094489) does not appear in the list of possible mutations:
+
+```{r }
+ subset(vcf_reseq_dt_qual, line==122)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
+ subset(vcf_dt_qual, line==122)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
+```
+
+but is close to a mutation called in both (at position 4094415). Viewing in IGV suggests this is a single mutation.
+
+Similarly, the additional mutation in line 49 (at position 2521372) does not appear in the list of possible mutations:
+
+```{r }
+ subset(vcf_reseq_dt_qual, line==49)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
+ subset(vcf_dt_qual, line==49)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
+```
+
+but is close to a mutation called in both (at position 2521360) and only has two mutations in support - it would be excluded following manual checking.  
+
+
+## Are the mutations in the correct line? *One mistake*.
+
+
+All but mutation is found in the correct line
+
+```{r}
+table(vcf_reseq_dt_qual$line==mutations_real$line[matches_in_orig])
+```
+
+The mutation found in what is believed to be line 84
+
+```{r}
+vcf_reseq_dt_qual[which(vcf_reseq_dt_qual$line!=mutations_real$line[matches_in_orig]),]
+```
+
+was originally detected in line 42:
+
+```{r}
+mutations_real$line[matches_in_orig][which(mutations_real$line[matches_in_orig]!=vcf_reseq_dt_qual$line)]
+```
+
+In fact, if we look at all the mutations in line 84 (i.e those that did not necessarily pass the filter)
+
+```{r}
+subset(vcf_reseq_dt, line==84)$POS
+```
+
+the large majority were originally in line 42
+
+
+```{r}
+subset(vcf_dt, line==42)$POS
+```
+
+In line 42 a crytic prophage was excised resulting in many called mutations near the *icd* gene being mapping errors.
+
+## Are we missing any expected mutations? *No*.
+
+Although all mutations that were called from the repeat sequencing appeared in the original sequencing, we also need to check whether any mutations were missed in the repeat sequencing. 
+
+
+```{r }
+original_reseq_mutations<-subset(vcf_dt_qual, line%in%unique(vcf_reseq_dt$line))
+```
+
+Of the `r nrow(original_reseq_mutations)` mutations we were expecting all but three were detected:
+
+```{r }
+match_in_reseq<-match(original_reseq_mutations$POS, vcf_reseq_dt$POS)
+table(is.na(match_in_reseq))
+```
+
+and all were in line 84:
+
+```{r }
+original_reseq_mutations[which(is.na(match_in_reseq)),"line"]
+```
+
+At some point lines 42 and 84 have been muddled.
+
+

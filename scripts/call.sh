@@ -5,10 +5,11 @@ set -euo pipefail
 threads=32                               # number of cores to be used                   
 export ref=~/Work/Ecoli_MA/ref/GCF_000005845.2_ASM584v2_genomic.fna  # reference genome
 root=~/Work/Ecoli_MA                    # project root
+run=original_sequencing   # original_sequencing or resequencing
 # -------------------------------------------------------------
 
-mkdir -p "$root"/filtered_bam
-mkdir -p "$root"/vcf
+mkdir -p "$root"/filtered_bam/"$run"
+mkdir -p "$root"/vcf/"$run"
 # directories for writing filtered_bam and vcf files
 
 
@@ -16,8 +17,8 @@ echo -e "\n=== VARIANT CALLING ==="
 parallel -j2 '
     bam={}                                                    # path to bam file
     sample=$(basename ${bam%.bam})                            # generates sample name from bam file name
-    rawvcf='$root'/vcf/${sample}.raw.vcf.gz                   # path to vcf output file
-    filtered_bam='$root'/filtered_bam/${sample}.filtered.bam           # path to filtered bam file
+    rawvcf='$root'/vcf/'$run'/${sample}.raw.vcf.gz                   # path to vcf output file
+    filtered_bam='$root'/filtered_bam/'$run'/${sample}.filtered.bam           # path to filtered bam file
 
     [[ -f $rawvcf ]] && { echo "SKIPPED  $sample raw VCF exists" ; exit; }
 
@@ -35,7 +36,7 @@ parallel -j2 '
     # and at bases with base quality >20. Then call variants
     
     bcftools index  "$rawvcf"  # index the vcf files
-' ::: "$root"/bam/*.bam
+' ::: "$root"/bam/"$run"/*.bam
 
 echo -e "\n=== FILTERING ==="
 
@@ -45,7 +46,7 @@ parallel -j"$threads" '
     
     sample=$(basename "$invcf" .raw.vcf.gz)  # get sample name from vcf file name
 
-    outvcf='$root'/vcf/${sample}.flt.vcf.gz  # path to filtered vcf output file
+    outvcf='$root'/vcf/'$run'/${sample}.flt.vcf.gz  # path to filtered vcf output file
 
     [[ -f $outvcf ]] && { echo "SKIPPED  $sample filtered VCF exists" ; exit ; }
 
@@ -61,6 +62,6 @@ parallel -j"$threads" '
 
     bcftools index "$outvcf"  # index the fitered vcf files
 
-' ::: "$root"/vcf/*.raw.vcf.gz
+' ::: "$root"/vcf/"$run"/*.raw.vcf.gz
 
 echo -e "\n Variant calling finished OK"
