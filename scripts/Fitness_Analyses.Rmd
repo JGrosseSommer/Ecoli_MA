@@ -1194,13 +1194,13 @@ We can start by plotting the naive estimates, with true values in blue and their
 
 ```{r estsim_plot1, fig.width = 6, fig.height = 12}
 par(mfrow=c(3,1))
-hist(est[,"b_M.1"], xlab=expression(hat(beta[M]))
+hist(estsim[,"b_M.1"], xlab=expression(hat(beta[M])))
 abline(v=b_M, col="blue")
 abline(v=rho*b_M, col="red")
-hist(est[,"s2_M.1"], xlab=expression(hat(sigma[M]^2))
+hist(estsim[,"s2_M.1"], xlab=expression(hat(sigma[M]^2)))
 abline(v=s2_M, col="blue")
 abline(v=rho*s2_M, col="red")
-hist(est[,"s2_E.1"], xlab=expression(hat(sigma[E]^2))
+hist(estsim[,"s2_E.1"], xlab=expression(hat(sigma[E]^2)))
 abline(v=s2_E, col="blue")
 abline(v=s2_E+(b_M^2+s2_M)*(mu_g+Efn+p_m*Etp)+p_m*(1-p_m)*(Etp^2)*b_M^2, col="red")
 ```
@@ -1209,11 +1209,11 @@ There are substantial biases in the estimates and these are well predicted by ou
 
 ```{r estsim_plot2, fig.width = 6, fig.height = 12}
 par(mfrow=c(3,1))
-hist(est[,"b_M.2"], breaks=30, xlab=expression(hat(beta[M]))
+hist(estsim[,"b_M.2"], breaks=30, xlab=expression(hat(beta[M])))
 abline(v=b_M, col="blue")
-hist(est[,"s2_M.2"], breaks=30, xlab=expression(hat(sigma[M]^2))
+hist(estsim[,"s2_M.2"], breaks=30, xlab=expression(hat(sigma[M]^2)))
 abline(v=s2_M, col="blue")
-hist(est[,"s2_E.2"], breaks=30, xlab=expression(hat(sigma[E]^2))
+hist(estsim[,"s2_E.2"], breaks=30, xlab=expression(hat(sigma[E]^2)))
 abline(v=s2_E, col="blue")
 ```
 
