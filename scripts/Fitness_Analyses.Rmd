@@ -26,7 +26,7 @@ bibliography: /Users/jhadfiel/Work/Tex/library/JarLib.bib
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
-rerun.gr<-FALSE
+rerun.r<-FALSE
 rerun.confint<-FALSE
 rerun.mcmc<-FALSE
 rerun.newsim<-FALSE
@@ -47,8 +47,8 @@ if(!rerun.confint){
 if(!rerun.mcmc){
  load(file.path(root,'models/m1_mcmc.Rdata'))
 }
-if(!rerun.gr){
-  if(!exists("df") || !is.data.frame(df)){stop("rerun.gr=FALSE but 'df' does not exist")}
+if(!rerun.r){
+  if(!exists("df") || !is.data.frame(df)){stop("rerun.r=FALSE but 'df' does not exist")}
 }
 if(!rerun.newsim){
  load(file.path(root,'models/newsim.Rdata'))
@@ -56,7 +56,7 @@ if(!rerun.newsim){
 
 ```
 
-220 *Escherichia coli* lines underwent 36 days of mutation accumulation (MA), the time it takes to accumulate one mutation on average. The aim of the study was to estimate the distribution of fitness effects of new mutations (DFE) by measuring the growth rate of 188 of these lines and their common ancestor. Since the protocol also generated many lines that had accumulated no mutants, we could also estimate the distribution of fitness effects across genetically identical MA lines. We refer to this as the distribution of fitness effects due to environmental effects (EDFE) although acknowledge that we use the word 'environmental' to capture all systematic differences between lines not due to DNA mutations.
+220 *Escherichia coli* lines underwent 36 days of mutation accumulation (MA), the time it takes to accumulate one mutation on average. The aim of the study was to estimate the distribution of fitness effects of new mutations (DFE) by measuring the growth rate of 188 of these MA lines and their common ancestor. Since the protocol also generated many lines that had accumulated no mutants, we could also estimate the distribution of fitness effects across genetically identical MA lines. We refer to this as the distribution of fitness effects due to environmental effects (EDFE) although acknowledge that we use the word 'environmental' to capture all systematic differences between lines not due to identified DNA mutations.
 
 # Data
 
@@ -86,7 +86,8 @@ While the bulk of the growth curves look reasonable, there are clearly some issu
 There are `r sum(subset(od_df, timepoint==0.08)$OD>0.2)` replicates that have a starting OD higher than 0.2. 
 
 ```{r highOD}
-od_df <- mutate(group_by(od_df, plate, row, column), highOD = OD[timepoint==0.08]>0.2)
+od_df <- mutate(group_by(od_df, plate, row, column), startOD = OD[timepoint==0.08])
+od_df$highOD<-od_df$startOD>0.2
 tapply(od_df$highOD, od_df$plate, sum)/48
 ```
 
@@ -203,19 +204,19 @@ plot(OD~jitter(timepoint,2),data=od_df, pch=16, cex=0.2, bty="l", ylab="Optical 
 
 In order to get an estimate of the growth rate in the exponential phase we can use gcplyr [@Blazanin.2024]. The change in log OD is computed over consecutive time-points for each well and a rolling 3-timepoint average calculated:  
 
-```{r growth_rate, eval=rerun.gr}
+```{r growth_rate, eval=rerun.r}
 df <- mutate(group_by(od_df, plate, row, column), deriv = calc_deriv(x = timepoint, y = OD, percapita = TRUE, blank = 0, window_width_n = 3, trans_y = 'log'))
 ```
 
 For each well, the maximum average change is taken as the growth rate:
 
-```{r sum_growth_rate, eval=rerun.gr}
-df <- summarize(df, gr = max_gc(deriv), across(-c(timepoint, OD, deriv),first))
+```{r sum_growth_rate, eval=rerun.r}
+df <- summarize(df, r = max_gc(deriv), across(-c(timepoint, OD, deriv),first))
 ```
 
 Since growth rates may be different in the inner wells, we can create a factor for modelling this
 
-```{r inner, eval=rerun.gr}
+```{r inner, eval=rerun.r}
 df <- mutate(df, inner = as.numeric(!(row %in% c('A', 'H') | column %in% c(1, 12))))
 ```
 
@@ -240,7 +241,7 @@ df$noanc<-as.numeric(df$line!="anc")
 A violin plot of the growth rates reveals an outlier with a very high growth rate:
 
 ```{r plot_gr}
-ggplot(data=df,aes(x='',y=gr)) + geom_violin() + geom_boxplot(width=0.1)+scale_y_continuous(name="growth rate")
+ggplot(data=df,aes(x='',y=r)) + geom_violin() + geom_boxplot(width=0.1)+scale_y_continuous(name="growth rate")
 ```
 
 It seems that the high growth rate is driven by the anomalous OD readings (in red)
@@ -253,7 +254,7 @@ points(log(OD)~timepoint, data=subset(od_df, plate==23 & row=="H" & column==1 & 
 Consequently, we also remove this data point:
 
 ```{r rm_anomalous_OD}
-df<-subset(df, gr<1.5)
+df<-subset(df, r<1.5)
 ```
 
 Line 95 accumulated a mutation in the mismatch-repair gene MutL and consequently had an elevated mutation rate with `r sum(mutations$line==95)` fixed mutations observed. There is evidence from the sequencing data that an addition five mutations arose after mutation accumulation but prior to sequencing. Given new mutations are also likely to arise during the growth assay, and data from this line are likely to have high leverage (all other lines had between zero and five), we removed this line from the analysis:
@@ -269,17 +270,17 @@ df<-subset(df, line!=95)
 
 ```{r }
 nz_empty<-n_empty[which(n_empty!=0)]
-summary(lm(gr~as.factor(line%in%nz_empty), data=df))
+summary(lm(r~as.factor(line%in%nz_empty), data=df))
 ```
 
 Indeed, if we plot the growth rates of the four lines with the most replicates excluded (the coloured points) they do not obviously grow more slowly than other lines:
 
 ```{r excluded_plot}
-boxplot(gr~as.factor(line%in%nz_empty), data=df, ylab="Growth Rate", xlab="At least one replicate excluded")
+boxplot(r~as.factor(line%in%nz_empty), data=df, ylab="Growth Rate", xlab="At least one replicate excluded")
 
 worst_four<-subset(df, line%in%names(nz_empty)[which(nz_empty>4)])
 
-points(gr~I(2+(as.numeric(as.factor(line))-2.5)/6), col=as.numeric(as.factor(line)), data=worst_four)
+points(r~I(2+(as.numeric(as.factor(line))-2.5)/6), col=as.numeric(as.factor(line)), data=worst_four)
 ```
 
 and the line (in red) with the lowest average growth rate actually has no mutations:
@@ -292,47 +293,68 @@ with(worst_four, mutation[match(levels(as.factor(line)), line)])
 
 ## Main model
 
-We fit a linear mixed model to the growth rates with the aim of estimating the mean and variance of the distribution of fitness effects of new mutations (DFE).  We can divide the terms of the model into those that are biologically interesting:
-
-* `(Intercept)` (fixed): expected growth rate of a zero-mutant line. 
-* `mutation` (fixed): the linear change in fitness per mutation, related to the mean of the DFE.
-* `anc` (fixed) effect of a line being an ancestor.
-* `(sqrt(mutation)-1|line)` (random) the effect of each mutation in a specific non-ancestral line. The variance of these effects is related to the variance of the DFE.  
-* `(noanc-1|line)` (random) the effect of being a specific non-ancestral line when the number of new mutations is zero. The variance of these effects is the variance of the EDFE.
-
-and those that control for technical variation:
-
-* `person` (fixed) effect of the person inoculating the cultures.
-* `inner` (fixed) effect of whether growth rates are different in inner wells. 
-* `(1|plate)` (random) effect of being on a specific plate. 
-* `(1|plate:column)` (random) effect of being in a specific column of a specific plate.
-* `(1|plate:row)` (random) effect of being in a specific row of a specific plate.
+We fit a linear mixed model to the maximum growth rates with the aim of estimating the mean and variance of the distribution of fitness effects of new mutations (DFE) and the environment experienced by a line (EDFE). 
 
 ```{r m1}
-library(glmmTMB)
-library(DHARMa)
-library(MCMCglmm)
+library(lmerTest)
 
-m1<-glmmTMB(gr~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df)
+m1<-lmer(r~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df)
+```
+
+The basic biological model is:
+
+\begin{equation}
+r_{ij} = \beta_0+\delta^{(A)}_i\beta_A+n_i\beta_M+(1-\delta^{(A)}_i)u^{(E)}_i+\sqrt{n_i}u^{(M)}_i+e_{ij}$$
+\end{equation}
+
+where $r_{ij}$ is the maximum growth rate of replicate $j$ from line $i$. When the line is an ancestral line, $\delta^{(A)}$ (`anc`) is one but is zero for MA lines. $n_i$ (`mutation`) is the number of called mutations that may be zero even for MA lines.
+
+ The fixed effects are
+
+* $\beta_0$ is the expected growth rate of a zero-mutant MA line: `(Intercept)`
+* $\beta_M$ is the linear change in fitness per mutation, related to the mean of the DFE: `mutation`.
+* $\beta_A$ is the effect of a line being an ancestor: `anc`
+
+ The random effects are
+
+* $u^{(M)}_i$ is the average effect of each mutation in MA line $i$. The variance of these effects ($\sigma^2_M$) is related to the variance of the DFE:  `(sqrt(mutation)-1|line)`
+* $u^{(E)}_i$ is the expected effect of MA line $i$ had the number of new mutations been zero. The variance of these effects is the variance of the EDFE ($\sigma^2_E$): `(noanc-1|line)`
+* $e_{ij}$ the residual for replicate $j$ of $i$ with variance $\sigma^2_e$.
+
+We also control for technical variation.  The fixed effects are
+
+* `person`: effect of the person inoculating the cultures.
+* `inner`: effect of whether growth rates are different in inner wells. 
+
+ The random effects are
+
+* `(1|plate)`: effect of being on a specific plate. 
+* `(1|plate:column)`: effect of being in a specific column of a specific plate.
+* `(1|plate:row)`"" effect of being in a specific row of a specific plate.
+
+The model summary is:
+
+```{r m1_summary}
 summary(m1)
 ```
 
 The biological findings of this model are:
 
-* Assuming no cell death, we can divide $ln(2)$ by the intercept to get an estimate of the generation time of a mutant-free line (grown in an outer well and inoculated by DN): `r round(60*log(2)/fixef(m1)$cond["(Intercept)"])`  minutes.
+* Assuming no cell death, we can divide $ln(2)$ by the intercept to get an estimate of the generation time of a mutant-free line (grown in an outer well and inoculated by DN): `r round(60*log(2)/fixef(m1)["(Intercept)"])`  minutes.
 
-* The `mutation` effect is the change in log growth rate caused by a single mutation - it is small and not significantly different from zero.
+* The `mutation` effect is the change in log growth rate caused by a single mutation $\beta_M$- it is small and not significantly different from zero.
 
-* The `anc` effect is positive suggesting that the ancestral line grows faster than the average growth rate of the mutant-free lines.  
+* The `anc` effect ($\beta_A$) is positive suggesting that the ancestral line grows faster than the average growth rate of the mutant-free lines.  
 
-* The `line` (`noanc`) variance, which is due to between-line differences not caused by mutations, explains approximately  `r round(100*VarCorr(m1)$cond$line/(sum(unlist(VarCorr(m1)$cond))+sigma(m1)^2))`\% of the total variance (after controlling for the fixed effects).   
+* The `line.1` (`noanc`) variance, $\sigma^2_E$, $which is due to between-line differences not caused by mutations, explains approximately  `r round(100*VarCorr(m1)$line.1/(sum(unlist(VarCorr(m1)))+sigma(m1)^2))`\% of the total variance (after controlling for the fixed effects).   
 
-* The estimate of the `line.1` (`sqrt(mutation)`) variance is bound at zero and suggests that single mutations generate very little, if any, between-line variance. 
+* The estimate of the `line` (`sqrt(mutation)`) variance, $\sigma^2_M$, is bound at zero and suggests that single mutations generate very little, if any, between-line variance. 
 
 We can use the DHARMa package to assess the model fit: 
 
 ```{r }
-simres <- simulateResiduals(m1)
+library(DHARMa)
+simres<-simulateResiduals(m1)
 plot(simres)
 ``` 
 
@@ -343,13 +365,13 @@ We can also plot the data and some model predictions in order to get a feel for 
 <div class="fold s">
 ```{r main_plot,  fig.width = 7,fig.height = 10, fig.cap="Raw growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. Replicates of non-ancestral lines are in orange and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate."}
 
-intercept=fixef(m1)$cond['(Intercept)']
-mutation_effect=fixef(m1)$cond['mutation']
-ancestor_effect=fixef(m1)$cond['anc']
+intercept=fixef(m1)['(Intercept)']
+mutation_effect=fixef(m1)['mutation']
+ancestor_effect=fixef(m1)['anc']
 
-env_variance<-as.numeric(VarCorr(m1)$cond[['line']])
-tech_variance<-as.numeric(VarCorr(m1)$cond[['plate.column']]+VarCorr(m1)$cond[['plate.row']]+VarCorr(m1)$cond[['plate']])
-mut_variance<-as.numeric(VarCorr(m1)$cond[['line.1']])
+env_variance<-as.numeric(VarCorr(m1)[['line.1']])
+tech_variance<-as.numeric(VarCorr(m1)[['plate.column']]+VarCorr(m1)[['plate.row']]+VarCorr(m1)[['plate']])
+mut_variance<-as.numeric(VarCorr(m1)[['line']])
 res_variance<-sigma(m1)^2
 
 pred_mutations<-0:3
@@ -381,7 +403,7 @@ CI <- ggplot(plot_data, aes(pred_mutations, pred_mean)) +
 
   ## a) raw-data points (jittered) -------------
   geom_jitter(data = filter(df_plot, point_col != "other"),
-              aes(x = mutation, y = gr, colour = point_col),
+              aes(x = mutation, y = r, colour = point_col),
               width  = .20, height = 0, alpha = .5, show.legend = FALSE) +
 
   scale_colour_manual(values = c(orange = "darkorange",
@@ -423,7 +445,7 @@ CI <- ggplot(plot_data, aes(pred_mutations, pred_mean)) +
 There seems to be quite a few reduced growth rates in the single mutant class - many of these are associated with line 45 which has a frameshift mutation in the *SspA* gene:
 
 ```{r }
-table(subset(df, gr<0.95)$line)
+table(subset(df, r<0.95)$line)
 ```
 
 We can highlight the data points in this line in red. 
@@ -434,7 +456,7 @@ We can highlight the data points in this line in red.
 df_45 <- df_plot %>%filter(line == 45)
 CI2 <- CI +                                          # start from CI
   geom_jitter(data = df_45,                   # only these rows
-              aes(x = mutation, y = gr),             # same aesthetics
+              aes(x = mutation, y = r),             # same aesthetics
               width  = .20, height = 0,
               colour = "red",                        # fixed colour
               size   = 2.2, alpha = .8,
@@ -449,7 +471,7 @@ CI2 <- CI +                                          # start from CI
 ## Obtaining the DFE 
 
 The previous model provides a model for the growth rates of each line. However, 
-to obtain the DFE we need to compute the distribution of relative fitnesses for single-mutant lines compared to zero-mutant lines. The expected growth rate of single-mutant lines ($r_w$) is the intercept which we denote $\beta_0$.
+to obtain the DFE we need to compute the distribution of relative fitnesses for single-mutant lines compared to zero-mutant lines. The expected growth rate of single-mutant lines ($r_w$) is the intercept, $\beta_0$.
 
 \begin{equation}
 r_w = \beta_0
@@ -461,7 +483,7 @@ The expected growth rate of line $i$ is
 r_i = \beta_0 + n_i\beta_M+\sqrt{n_i}u^{(M)}_i
 \end{equation}
 
-where the expectation is taken over the distribution of environmental effects. $n_i$ is the number of mutations line $i$ carries (`mutation`) and $\beta_M$ is the corresponding slope. $u^{(M)}_i$ is the line slope as parameterised in the term `(sqrt(mutation)|line)`. 
+where the expectation is taken over the distribution of environmental effects. 
 
 The selection coefficient for MA line $i$ is $r_i-r_w$, although this is in units *per hour* and is therefore hard to compare across studies and species (See Equation 2.2 in @Chevin.2011b and Equation 7 in  @Fink.2024). To make selection coefficients more comparable, they can be put on the scale of generations by using Equation 3.2 in @Chevin.2011b:
 
@@ -483,13 +505,13 @@ and variance
 \end{equation}
 
 
-
 Since the mean and the variance of the DFE are functions of model parameters we refit model `m1` using Markov chain Monte Carlo in order to obtain credible intervals. 
 
 
 ```{r mcmc, eval=rerun.mcmc}
+library(MCMCglmm)
 
-m1_mcmc<-MCMCglmm(gr~mutation+anc+person+inner, 
+m1_mcmc<-MCMCglmm(r~mutation+anc+person+inner, 
                   random=~line+idh(sqrt(mutation)):line+plate+plate:column+plate:row, 
                   data=as.data.frame(df), 
                   prior=list(R=IW(1, 0.002), G=F(1,1000)), 
@@ -555,10 +577,10 @@ HPDinterval(var_s2)
 
 ## Is the ancestor effect comparable to other zero-mutant line effects? 
 
-The ancestor's growth rate is estimated to be `r round(fixef(m1)$cond["anc"],4)` units larger than the average growth rate of the zero-mutant lines. However, the zero-mutant lines are not equivalent and vary to some degree in their growth rate - the estimated standard deviation (the square-root of the `line` variance) is `r round(sqrt(VarCorr(m1)$cond["line"][[1]]), 4)`. Since `r round(fixef(m1)$cond["anc"],4)`/`r round(sqrt(VarCorr(m1)$cond["line"][[1]]), 4)` = `r round(fixef(m1)$cond["anc"]/sqrt(VarCorr(m1)$cond["line"][[1]]), 3)` it is not an outlier with respect to the distribution of zero-mutant line effects. We can test this formally by fitting a random line effect for the ancestor that comes from the same distribution as the zero-mutant line effects. The fixed ancestral effect is now smaller and no longer significant:
+The ancestor's growth rate is estimated to be `r round(fixef(m1)["anc"],4)` units larger than the average growth rate of the zero-mutant lines. However, the zero-mutant lines are not equivalent and vary to some degree in their growth rate - the estimated standard deviation (the square-root of the `line` variance) is `r round(sqrt(VarCorr(m1)["line.1"][[1]]), 4)`. Since `r round(fixef(m1)["anc"],4)`/`r round(sqrt(VarCorr(m1)["line.1"][[1]]), 4)` = `r round(fixef(m1)["anc"]/sqrt(VarCorr(m1)["line.1"][[1]]), 3)` it is not an outlier with respect to the distribution of zero-mutant line effects. We can test this formally by fitting a random line effect for the ancestor that comes from the same distribution as the zero-mutant line effects. The fixed ancestral effect is now smaller and no longer significant:
 
 ```{r m2}
-m2<-glmmTMB(gr ~ mutation + anc + person + inner + (1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df)
+m2<-lmer(r ~ mutation + anc + person + inner + (1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df)
 summary(m2)
 ```
 
@@ -575,24 +597,35 @@ df$nsyn_mutation<-as.numeric(nnsyn_mutations[df$line])
 and rerun model with this as a predictor
 
 ```{r m3}
-m3<-glmmTMB(gr ~ nsyn_mutation + anc + person + inner + (noanc-1|line) + (sqrt(nsyn_mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+m3<-lmer(r ~ nsyn_mutation + anc + person + inner + (noanc-1|line) + (sqrt(nsyn_mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
 summary(m3)
 ```
 
 We find that even when we only look at mutations that likely have a stronger effect on fitness, mutations do not significantly influence growth rate. 
 
+## Can the between-line variance be explained by variation in starting OD?
+
+A common practice when measuring bacterial growth curves is to standardize the inoculation cell density to minimize any influence of starting density on growth curve parameter estimates. While this what not feasible given the level of throughput, we can attempt to control for starting density (`startOD`) statistically. However, there is the danger that we control for some of the fitness variation we seek to measure if the fast growth of a line results in high starting density.  
+
+```{r m4}
+m4<-lmer(r ~ mutation + anc + person + inner + startOD + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+summary(m4)
+```
+
+The effect of starting density on the maximum growth rate is small and non-significant, and the impact on other model parameters is negligible.
+
 ## Significance testing of random effect variances
 
-glmmTMB defaults to Wald-tests for testing the significance of fixed effects - these are likely to be highly accurate given the number of lines.  To test the significance of the random effects we perform likelihood ratio tests implemented in the $\texttt{anova}$ method for glmmTMB objects (although we note that the p-values could be halved [@Chernoff.1954]).
+To test the significance of the fixed effects we use t-tests with the degrees of freedom obtained using the Satterthwaite approximation as implemented in `lmerTest`. To test the significance of the random effects we perform likelihood ratio tests implemented in the $\texttt{anova}$ method for lmer objects (although we note that the p-values could be halved [@Chernoff.1954]).
 
 ### Genetic line effects
 
 We can omit the term `(sqrt(mutation)-1|line)` from model `m1` to test whether the variance of the DFE is non-zero
 
 
-```{r m4}
-m4<-glmmTMB(gr ~ mutation + anc + person + inner + (noanc-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
-anova(m4,m1)
+```{r m5}
+m5<-lmer(r ~ mutation + anc + person + inner + (noanc-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+anova(m5,m1)
 ```
 
 The evidence is not strong
@@ -601,15 +634,15 @@ The evidence is not strong
 
 We can omit the term `(noanc-1|line)` from model `m1` to test whether the variance of the EDFE is non-zero
 
-```{r m5}
-m5<-glmmTMB(gr ~ mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
-anova(m5,m1)
+```{r m6}
+m6<-lmer(r ~ mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+anova(m6,m1)
 ```
 
 There is strong evidence that lines vary in their fitness due to things other than the mutations they've accumulated.
 
-```{r m6, echo=FALSE}
-m6<-glmmTMB(gr ~ mutation + anc + person + inner  + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+```{r m7, echo=FALSE}
+m7<-lmer(r ~ mutation + anc + person + inner  + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
 # additional analysis for performing LRT on the total between-line variance
 ```
 
@@ -623,7 +656,7 @@ df_long_Sane<-read.csv(file.path(root, "meta/Sane_data.csv"))
 
 The data frame was kindly provided by Mrudula Sane and Deepa Agashe and contains three columns `abs_gr_1`, `abs_gr_2`, `abs_gr_3` which are the three replicate growth rate estimates for each line.  `cognate_anc_gr` is the estimated growth rate of that line's immediate ancestor (presumably the average of three replicates). The `rel_gr` column is the relative growth rate as used in the paper which is the average value of the `abs_gr` variables,  divided by `cognate_anc_gr` (note this is equal to $1+(r_i-r_w)/r_w$).
 
-We can turn this wide-format data-frame into long format with the three absolute growth rates appearing in the single column (`gr`):
+We can turn this wide-format data-frame into long format with the three absolute growth rates appearing in the single column (`r`):
 
 
 ```{r }
@@ -631,16 +664,16 @@ df_Sane <- df_long_Sane[,c('mutation_id',"abs_gr_1", "abs_gr_2", "abs_gr_3","cog
     pivot_longer(
         cols = c("abs_gr_1", "abs_gr_2", "abs_gr_3"),
         names_to = "replicate",
-        values_to = "gr"
+        values_to = "r"
     )
 ```
 
 Ideally, we would have information of the replicate estimates that formed each `cognate_anc_gr` in order to model uncertainty in $r_w$. It would also have been good to know the line identity of the immediate ancestor, since the line may itself have acquired a single mutation from a more distant ancestor. Since this information is not available we will analyse $ln(2)(r_m-r_w)/r_w$
 
 ```{r SaneFitness_model}
-df_Sane=df_Sane %>% mutate(s =log(2)*(gr-cognate_anc_gr)/cognate_anc_gr)
+df_Sane=df_Sane %>% mutate(s =log(2)*(r-cognate_anc_gr)/cognate_anc_gr)
 
-m1_Sane<-glmmTMB(s~(1|mutation_id),data=df_Sane)
+m1_Sane<-lmer(s~(1|mutation_id),data=df_Sane)
 ```
 
 ```{r SaneSummary}
@@ -650,14 +683,14 @@ summary(m1_Sane)
 The mean of the DFE (the intercept) exceeds zero by some margin and the variance of the DFE is also substantial and highly significant:
 
 ```{r }
-m0_Sane<-glmmTMB(s~1,data=df_Sane)
+m0_Sane<-lm(s~1,data=df_Sane)
 anova(m1_Sane, m0_Sane)
 ```
 
  Part of the between-line variance will be driven by the fact that the same `cognate_anc_gr` value is used for each of the three replicate growth rates of a mutation. However, if we analyse the replicate growth rates of each line without normalising by the ancestors growth rate and generation time we still see substantial between-line variance. 
 
 ```{r SaneFitness_model2}
-m2_Sane<-glmmTMB(gr~(1|mutation_id),data=df_Sane)
+m2_Sane<-lmer(r~(1|mutation_id),data=df_Sane)
 ```
 
 ```{r SaneSummary2}
@@ -684,7 +717,7 @@ We interpret our estimate of $\sigma^2_E$ (the variance associated with the `(no
 
 ## Mutation calling errors and mix-ups
 
-In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call it. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round(17/(194/196)+7/(192/196)-24, 2)` /188= `r round((17/(194/196)+7/(192/196)-24)/188, 4)` mutations per assayed line. We also resequenced twenty-two lines in order to assess whether there had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=$1/22=`r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The average number of called mutations per line will then be close to the expected number of true positives which is 202/188=`r round(202/188, 3)` among assayed lines. 
+In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call it. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round(17/(194/196)+7/(192/196)-24, 2)` /188= `r round((17/(194/196)+7/(192/196)-24)/188, 4)` mutations per assayed line. We also resequenced twenty-two lines in order to assess whether there had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=$ 1/22=`r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The average number of called mutations per line will then be close to the expected number of true positives which is 202/188=`r round(202/188, 3)` among assayed lines. 
 
 To understand how omitted mutations contribute to the between line variance in putatively zero-mutant lines we can think about the number of omitted mutations, $\mathscr{O}$, in line $i$:
 
@@ -822,11 +855,10 @@ $$\beta_\mathscr{M}=\beta_MN\mu_g\frac{ln(N+1)}{N}=\beta_M\mu_gln(N+1)$$.
 
 This differs from $\beta_M\mu_g\tau$ by approximately a factor $ln(2)$. This is likely due to the Lea–Coulson approximation assuming mutant cells grow stochastically according to a Yule process rather than deterministic synchronous growth.  
 
-Using our estimates of $mu_g$=`r round(mu_g, 5)` and $\tau$=`r round(tau,2)` we get $\beta_{\mathscr{O}}=\beta_m$ `r round(tau*mu_g, 4)` and $\sigma^2_{\mathscr{O}}=\sigma^2_M$ `r round(mu_g, 4)`.
+Using our estimates of $\mu_g$ =`r round(mu_g, 5)` and $\tau$=`r round(tau,2)` we get $\beta_{\mathscr{O}}=\beta_m$ `r round(tau*mu_g, 4)` and $\sigma^2_{\mathscr{O}}=\sigma^2_M$ `r round(mu_g, 4)`.
 
 
-
-We can check these results through simulation. `sim_new` is a function that simulates a population that doubles `tau` times. At each cell division the two sister cells acquire mutations sampled from a Poisson with mean $mu_g$. The mutations add an increment to the cell's original fitness with the increments sample from a normal with mean `b_M` and variance `s2_M`:
+We can check these results through simulation. `sim_new` is a function that simulates a population that doubles `tau` times. At each cell division the two sister cells acquire mutations sampled from a Poisson with mean `mu_g`. The mutations add an increment to the cell's original fitness with the increments sample from a normal with mean `b_M` and variance `s2_M`:
 
 <div class="fold s">
 ```{r sim_new}
@@ -981,10 +1013,12 @@ The expected mean fitness is
 \end{array}
 \end{equation}
 
-`m_correction` is a function that can fit this model using maximum-likelihood. The covariate $n$ ($n^{(tp)}+n^{(fp)}$) is replaced by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\tau$ in the fixed formula (with coefficient $\beta_M$) and by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g$ in the random slope formula. An additional between-line variance component is included with the variance $(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2$. Conditional on $\beta_M$, the model is a standard linear-mixed model which can be fitted using glmmTMB and the likelihood extracted. `optim` is used to select the $\beta_M$ that maximises the conditional likelihood.
+`m_correction` is a function that can fit this model using maximum-likelihood. The covariate $n$ ($n^{(tp)}+n^{(fp)}$) is replaced by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\tau$ in the fixed formula (with coefficient $\beta_M$) and by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g$ in the random slope formula. An additional between-line variance component is included with the variance $\left(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2$. Conditional on $\beta_M$, the model is a standard linear-mixed model and the likelihood extracted. We fit the mixed model using glmmTMB since it allows variances to be fixed, unlike lmer. `optim` is used to select the $\beta_M$ that maximises the conditional likelihood.
    
 <div class="fold s">
 ```{r m_correction}
+library(glmmTMB)
+
 m_correction<-function(formula, n, data, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m){
 
   m1<-glmmTMB(formula,  data=data)
@@ -1023,7 +1057,7 @@ m_correction<-function(formula, n, data, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, E
      beta_map[2]<-NA
      beta_map<-as.factor(beta_map)
 
-     theta_start<-c(log(sqrt(bMbias)), log(sqrt(unlist(VarCorr(m1)))))
+     theta_start<-c(log(sqrt(bMbias)), log(sqrt(unlist(VarCorr(m1)$cond))))
 
      theta_map<-seq_along(theta_start)
      theta_map[1]<-NA
@@ -1101,11 +1135,11 @@ for(i in 1:nsim){
 
   dat<-data.frame(y=c(y), line=as.factor(rep(1:nlines, each=nrep)), n_obs=rep(n_obs, each=nrep))
 
-  m1<-glmmTMB(y~n_obs+(1|line)+(sqrt(n_obs)-1|line), data=dat)
+  m1.sim<-glmmTMB(y~n_obs+(1|line)+(sqrt(n_obs)-1|line), data=dat)
 
-  m2<-m_correction(y~n_obs+(1|line)+(sqrt(n_obs)-1|line), n="n_obs", data=dat, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+  m2.sim<-m_correction(y~n_obs+(1|line)+(sqrt(n_obs)-1|line), n="n_obs", data=dat, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
-  estsim[i,]<-c(fixef(m1)$cond["n_obs"], unlist(VarCorr(m1)$cond), fixef(m2)$cond["new_n"], unlist(VarCorr(m2)$cond)[c("line", "line.1")])
+  estsim[i,]<-c(fixef(m1.sim)$cond["n_obs"], unlist(VarCorr(m1.sim)$cond), fixef(m2.sim)$cond["new_n"], unlist(VarCorr(m2.sim)$cond)[c("line", "line.1")])
 
   print(i)
 
@@ -1130,17 +1164,17 @@ We can start by plotting the naive estimates, with true values in blue and their
 rho_sim<-(1-p_m_sim)*Etp_sim/(Etp_sim+Efp_sim)
 
 par(mfrow=c(3,1))
-hist(estsim[,"b_M.1"], xlab=expression(widehat(beta[M])), main="", breaks=30)
+hist(estsim[,"b_M.1"], xlab=expression(widehat(beta[M])), main="", breaks=50)
 abline(v=b_M_sim, col="blue")
 abline(v=mean(estsim[,"b_M.1"]))
 abline(v=rho_sim*b_M_sim, col="red")
 
-hist(estsim[,"s2_M.1"], xlab=expression(widehat(sigma[M]^2)), main="", breaks=30)
+hist(estsim[,"s2_M.1"], xlab=expression(widehat(sigma[M]^2)), main="", breaks=50)
 abline(v=s2_M_sim, col="blue")
 abline(v=mean(estsim[,"s2_M.1"]))
 abline(v=rho_sim*s2_M_sim, col="red")
 
-hist(estsim[,"s2_E.1"], xlab=expression(widehat(sigma[E]^2)), main="", breaks=30)
+hist(estsim[,"s2_E.1"], xlab=expression(widehat(sigma[E]^2)), main="", breaks=50)
 abline(v=s2_E_sim, col="blue")
 abline(v=mean(estsim[,"s2_E.1"]))
 abline(v=s2_E_sim+(b_M_sim^2+s2_M_sim)*(mu_g_sim+Efn_sim+p_m_sim*Etp_sim)+p_m_sim*(1-p_m_sim)*(Etp_sim^2)*b_M_sim^2, col="red")
@@ -1172,25 +1206,26 @@ The corrected estimates look unbiased for $\beta_M$ and $\sigma^2_M$. While the 
 We  can apply these models to our own data, but using our empirically assessed error rate parameters:
 
 ```{r }
-m1_correct<-m_correction(gr~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+m1_correct<-m_correction(r~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
 summary(m1_correct)
 ```
 
-The estimate of $\sigma^2_E$ has hardly shifted, and is `r round(VarCorr(m1_correct)$cond$line/VarCorr(m1)$cond$line,5)` times its original value. $\sigma^2_E$ remains significantly different from zero, although the p-value is less extreme: 
+The estimate of $\sigma^2_E$ has hardly shifted, and is `r round(VarCorr(m1_correct)$line/VarCorr(m1)$line,5)` times its original value. $\sigma^2_E$ remains significantly different from zero, although the p-value is less extreme: 
 
 ```{r }
-m5_correct<-m_correction(gr~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+m6_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
-anova(m1_correct, m5_correct)
+anova(m1_correct, m6_correct)
 ```
 
 
 ```{r confidenceIntervals, eval=rerun.confint, echo=FALSE}
-ci_m1=confint(m1, method="profile")
-ci_m3=confint(m3, method="profile")
-ci_m1_Sane=confint(m1_Sane, method="profile")
-ci_m2_Sane=confint(m2_Sane, method="profile")
+ci_m1=confint(m1, method="profile", signames=FALSE)
+ci_m3=confint(m3, method="profile", signames=FALSE)
+
+ci_m1_Sane=confint(m1_Sane, method="profile", signames=FALSE)
+ci_m2_Sane=confint(m2_Sane, method="profile", signames=FALSE)
 ```
 
 ```{r save_models, eval=save, echo=FALSE}
@@ -1200,9 +1235,10 @@ save(m3,file=file.path(root,'models/m3.Rdata'))
 save(m4,file=file.path(root,'models/m4.Rdata'))
 save(m5,file=file.path(root,'models/m5.Rdata'))
 save(m6,file=file.path(root,'models/m6.Rdata'))
+save(m7,file=file.path(root,'models/m7.Rdata'))
 
 save(m1_correct,file=file.path(root,'models/m1_correct.Rdata'))
-save(m5_correct,file=file.path(root,'models/m5_correct.Rdata'))
+save(m6_correct,file=file.path(root,'models/m6_correct.Rdata'))
 
 save(m1_mcmc,file=file.path(root,'models/m1_mcmc.Rdata'))
 save(m1_Sane,file=file.path(root,'models/m1_Sane.Rdata'))
