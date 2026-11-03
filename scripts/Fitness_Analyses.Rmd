@@ -26,7 +26,7 @@ bibliography: /Users/jhadfiel/Work/Tex/library/JarLib.bib
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
-rerun.r<-FALSE
+rerun.r<-TRUE
 rerun.confint<-FALSE
 rerun.mcmc<-FALSE
 rerun.newsim<-FALSE
@@ -507,6 +507,10 @@ and variance
 
 Since the mean and the variance of the DFE are functions of model parameters we refit model `m1` using Markov chain Monte Carlo in order to obtain credible intervals. 
 
+```{r echo=FALSE, eval=!rerun.mcmc}
+library(MCMCglmm)
+```
+
 
 ```{r mcmc, eval=rerun.mcmc}
 library(MCMCglmm)
@@ -516,7 +520,6 @@ m1_mcmc<-MCMCglmm(r~mutation+anc+person+inner,
                   data=as.data.frame(df), 
                   prior=list(R=IW(1, 0.002), G=F(1,1000)), 
                   longer=10, verbose=FALSE)
-
 ```
 
 The model estimates are very close to those obtained using restricted maximum likelihood:
@@ -727,6 +730,7 @@ To understand how omitted mutations contribute to the between line variance in p
 
 where $n^{(fn)}$ and $n^{(tp)}$ are the number of false-negative and true-positive mutations in a line, and $\delta=1$ if line $i$ has been mixed up with line $j$ but is zero otherwise. Line $j$ is assumed to be a line drawn at random from all lines. The effect of these omitted mutations on a line's fitness is:
 
+
 \begin{equation}
 u^{(\mathscr{O})}_i=\sum_k^{\mathscr{O}_i} \beta_M+u^{(M)}_k
 \end{equation}
@@ -781,7 +785,7 @@ and so
 ```{r echo=FALSE}
 Efn<-(17/(194/196)+7/(192/196)-24)/188
 Efp<-Efn
-Etp<-202/188
+Etp<-202/188-Efp
 p_m<-1/22
 rho<-(1-p_m)*Etp/(Etp+Efp)
 tau<-60
@@ -1211,7 +1215,7 @@ m1_correct<-m_correction(r~mutation + anc + person + inner + (noanc-1|line) + (s
 summary(m1_correct)
 ```
 
-The estimate of $\sigma^2_E$ has hardly shifted, and is `r round(VarCorr(m1_correct)$line/VarCorr(m1)$line,5)` times its original value. $\sigma^2_E$ remains significantly different from zero, although the p-value is less extreme: 
+Since the original estimates of $\beta_M$ and $\sigma^2_M$ were small and non-significant we did not expect large changes in the estimate of $\sigma^2_E$, and indeed it was `r round(VarCorr(m1_correct)$line/VarCorr(m1)$line,5)` times its original value. We do expect mutation calling errors, mix-ups and new mutations to make it harder to detect non-genetic between line variance and indeed the p-value is less extreme, although $\sigma^2_E$ still remains significantly different from zero.
 
 ```{r }
 m6_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
@@ -1219,6 +1223,17 @@ m6_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|l
 anova(m1_correct, m6_correct)
 ```
 
+We can also perform these tests assuming that the number of novel mutations and all error rates are an order of magnitude larger than what we estimate.
+
+```{r }
+m1b_correct<-m_correction(r~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g*10, Etp=202/188-Efp*10, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
+
+m6b_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g*10, Etp=202/188-Efp*10, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
+
+anova(m1b_correct, m6b_correct)
+```
+
+$\sigma^2_E$ remains significantly different from zero, although the p-value is less extreme, as expected. 
 
 ```{r confidenceIntervals, eval=rerun.confint, echo=FALSE}
 ci_m1=confint(m1, method="profile", signames=FALSE)
@@ -1239,6 +1254,8 @@ save(m7,file=file.path(root,'models/m7.Rdata'))
 
 save(m1_correct,file=file.path(root,'models/m1_correct.Rdata'))
 save(m6_correct,file=file.path(root,'models/m6_correct.Rdata'))
+save(m1b_correct,file=file.path(root,'models/m1_correct.Rdata'))
+save(m6b_correct,file=file.path(root,'models/m6_correct.Rdata'))
 
 save(m1_mcmc,file=file.path(root,'models/m1_mcmc.Rdata'))
 save(m1_Sane,file=file.path(root,'models/m1_Sane.Rdata'))

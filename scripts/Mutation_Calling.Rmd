@@ -762,22 +762,22 @@ The additional mutation in line 122 (at position 4094489) does not appear in the
  subset(vcf_dt_qual, line==122)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
 ```
 
-but is close to a mutation called in both (at position 4094415). Viewing in IGV suggests this is a single mutation.
+but is close to a mutation called in both (at position 4094415). Viewing the original reads in IGV shows many reads with the alternate base at position 4094489 but these must have not passed the quality threshold.  It is hard to understand the pattern when viewing in IGV. For both the original and resequencing reads the coverage is low in the 150bp region spanning the mutations and this is not seen in other lines. There are also very few read pairs in which the reads support both mutations. It is possible there is some structural variant such as an insertion, but in the absence of definitive information we class this is a single mutation. 
 
-Similarly, the additional mutation in line 49 (at position 2521372) does not appear in the list of possible mutations:
+The additional mutation in line 49 (at position 2521372) does not appear in the list of possible mutations:
 
 ```{r }
  subset(vcf_reseq_dt_qual, line==49)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
  subset(vcf_dt_qual, line==49)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
 ```
 
-but is close to a mutation called in both (at position 2521360) and only has two mutations in support - it would be excluded following manual checking.  
+but is close to a mutation called in both (at position 2521360) and only has two mutations in support.  
 
 
 ## Are the mutations in the correct line? *One mistake*.
 
 
-All but mutation is found in the correct line
+All but one mutation is found in the correct line
 
 ```{r}
 table(vcf_reseq_dt_qual$line==mutations_real$line[matches_in_orig])
@@ -833,5 +833,6 @@ original_reseq_mutations[which(is.na(match_in_reseq)),"line"]
 ```
 
 At some point lines 42 and 84 have been muddled.
+
 
 

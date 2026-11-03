@@ -5,15 +5,15 @@ set -euo pipefail
 threads=32                               # number of cores to be used                   
 export ref=~/Work/Ecoli_MA/ref/GCF_000005845.2_ASM584v2_genomic.fna  # reference genome
 root=~/Work/Ecoli_MA                    # project root
-run=original_sequencing   # original_sequencing or resequencing
+run=resequencing   # original_sequencing or resequencing
 # -------------------------------------------------------------
 
 mkdir -p "$root"/filtered_bam/"$run"
 mkdir -p "$root"/vcf/"$run"
 # directories for writing filtered_bam and vcf files
 
-
 echo -e "\n=== VARIANT CALLING ==="
+
 parallel -j2 '
     bam={}                                                    # path to bam file
     sample=$(basename ${bam%.bam})                            # generates sample name from bam file name
@@ -27,7 +27,7 @@ parallel -j2 '
 
     # removes unmapped, QC-failed and duplicate reads + secondary/supplementary alignments
 
-    bcftools mpileup  --threads 4 -f '"$ref"' \
+    bcftools mpileup  --threads 4 -d 3000 -L 3000 -f '"$ref"' \
         -E  \
         --min-MQ 30 --min-BQ 20 "$filtered_bam" |   
     bcftools call   --threads 4 --ploidy 1 -m -Oz -o "$rawvcf"
@@ -60,7 +60,7 @@ parallel -j"$threads" '
     # index the filtered vcf files
     # standardises variant format
 
-    bcftools index "$outvcf"  # index the fitered vcf files
+    bcftools index "$outvcf"  # index the filtered vcf files
 
 ' ::: "$root"/vcf/"$run"/*.raw.vcf.gz
 
