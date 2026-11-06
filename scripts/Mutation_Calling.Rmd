@@ -235,7 +235,7 @@ vcf_dt_qual<-subset(vcf_dt, QUAL>20)
 
 ## Possible mutations
 
-For variants that pass the quality filter, we can see that bps generally have close to 100% of reads supporting the alternate, whereas for INDELS the proportion is generally less. 
+For variants that pass the quality filter, we can see that bps (in red) generally have close to 100% of reads supporting the alternate, whereas for INDELS (in black) the proportion is generally less. Variants in rRNA genes or insertion sequence (triangles) often have few alternate reads supporting them. 
 
 
 ```{r plot_qual}
@@ -243,7 +243,7 @@ plot(jitter(prop, amount=0.01)~jitter(n_alt,2), col=1+as.numeric(nchar(ALT)==nch
 abline(v=30, lty=2)
 abline(h=0.95, lty=2)
 ```
-with at least 30 reads supporting the alternate allele and less than 5% of reads supporting the reference allele
+
 
 All mutations with with at least 30 reads in support of the alternate allele and more than 95% of reads in support of the alternate allele (i.e. the upper right-hand quadrant formed by the dotted lines) were considered unambiguously real. The remainder were checked in the Integrative Genomics Viewer [@Robinson.2011]. The `check` column of manual\_check.csv indicates whether the mutation was checked (not `NA`) and whether it was deemed OK (`OK`) or not (`NO`). 
 
@@ -764,14 +764,14 @@ The additional mutation in line 122 (at position 4094489) does not appear in the
 
 but is close to a mutation called in both (at position 4094415). Viewing the original reads in IGV shows many reads with the alternate base at position 4094489 but these must have not passed the quality threshold.  It is hard to understand the pattern when viewing in IGV. For both the original and resequencing reads the coverage is low in the 150bp region spanning the mutations and this is not seen in other lines. There are also very few read pairs in which the reads support both mutations. It is possible there is some structural variant such as an insertion, but in the absence of definitive information we class this is a single mutation. 
 
-The additional mutation in line 49 (at position 2521372) does not appear in the list of possible mutations:
+Similarly, an additional mutation in line 49 (at position 2521372) does not appear in the list of possible mutations:
 
 ```{r }
  subset(vcf_reseq_dt_qual, line==49)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
  subset(vcf_dt_qual, line==49)[,c("POS", "n_ref", "n_alt", "REF", "ALT")]
 ```
 
-but is close to a mutation called in both (at position 2521360) and only has two mutations in support.  
+but is close to a mutation called in both (at position 2521360) and only has two reads in support. However, viewing in IGV suggests that there is a 100bp deletion in this region. 
 
 
 ## Are the mutations in the correct line? *One mistake*.

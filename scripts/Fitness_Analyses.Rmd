@@ -714,7 +714,7 @@ m1_Sane_mcmc<-MCMCglmm(s~1,
 summary(m1_Sane_mcmc)
 ```
 
-# Hidden mutations
+# Mutation calling errors, mix-ups and novel mutations
 
 We interpret our estimate of $\sigma^2_E$ (the variance associated with the `(noanc - 1 | line)` term) as the variance due to non-genetic effects. This would clearly be compromised if mutations were present in our putatively zero-mutation lines. Putatively zero-mutation lines may harbour mutations because of false-negative mutation calling, sample mix-ups and/or new mutations that arose after sequencing. 
 
@@ -800,24 +800,24 @@ In the final round of MA a colony is grown from a single initial cell up to appr
 
 If we have $N_c$ as the number of cells in the final colony, and $N_1$ the number of cells which initiated the stock and $N_2$ the final number of cells in the stock, the number of cell divisions experienced by a cell is $\tau=log_2(N_c)+log_2(N_2)-log_2(N_1)$ assuming synchronous growth. From our MA lines the mutation rate per genome per generation was estimated to be $\mu_g=0.00105$ (see \citet{Lee2012RateSequencing} also) such that the expected number of mutations per line is $\tau\mu_g$. $log_2(N_c)$ is approximately 28 \citet{Lee2012RateSequencing} and $log_2(N_2)-log_2(N_1)$ is approximately 32 such that $\tau\mu_g=$ `r round(tau*mu_g,3)`. If the number of mutations per cell is Poisson distributed only a small proportion of cells will have new mutations  $1-e^{-\tau\mu_g}=$ `r round(1-exp(-tau*mu_g),3)` and of those, `r round(100*dpois(1, tau*mu_g)/(1-dpois(0, tau*mu_g)))`\% will only carry a single mutation. Note the average number of cell divisions experienced by cells in the final colony will exceed $log_2(N_c)$ since colony growth is asymmetric [@Gralka.2016] which will mean $\tau$ is underestimated and $\mu_g$ is overestimated since $log_2(N_c)$ is used to convert the number of accumulated mutations into a rate per generation [@GrosseSommer.2026a]. 
 
-To understand how these new mutations contribute to the between line variance we can think about the number of new mutations (as opposed to the number of mutants) in a line, $\mathscr{M}$, and the number of cells that carry each of those mutations, a mutation's clone size. For new mutation $k$, the clone size is $NP_k$ where N is the total number of cells and $P_k$ the proportion of cells that carry mutation $k$.  The aggregate effect of new mutations on line $i$'s fitness is then a sum of each mutations fitness effect ($\beta_M+u^{(M)}_k$) weighted by the frequency of that mutation, $P_k$:
+To understand how these new mutations contribute to the between line variance we can think about the number of new mutations (as opposed to the number of mutants) in a line, $\mathscr{N}$, and the number of cells that carry each of those mutations, a mutation's clone size. For new mutation $k$ in line $i$, the clone size is $N_iP_{ki}$ where $N_i$ is the total number of cells in the stock of line $i$ and $P_{ik}$ the proportion of cells that carry mutation $k$.  The aggregate effect of new mutations on line $i$'s fitness is then a sum of each mutations fitness effect ($\beta_M+u^{(M)}_k$) weighted by the frequency of that mutation, $P_k$:
 
-$$u^{(\mathscr{M})}_i=\sum^\mathscr{M}_k P_k(\beta_M+u^{(M)}_k)$$
+$$u^{(\mathscr{N})}_i=\sum^{\mathscr{N}_i}_i P_{ik}(\beta_M+u^{(M)}_{ik})$$
 
- The variance of this sum across lines is the contribution of new mutations to the between-line variance in putatively zero-mutant lines, which we will designate as $\sigma^2_\mathscr{M}$. The variance of this sum can be approximated by the Blackwell-Girshick equation [@Blackwell.1979]. 
+ The variance of this sum across lines is the contribution of new mutations to the between-line variance in putatively zero-mutant lines, which we will designate as $\sigma^2_\mathscr{N}$. The variance of this sum can be approximated by the Blackwell-Girshick equation [@Blackwell.1979]. 
 
-$$\sigma^2_\mathscr{M}=E[\mathscr{M}]VAR(P(\beta_M+u^{(M)}))+E[P(\beta_M+u^{(M)})]^2VAR(\mathscr{M})$$
+$$\sigma^2_\mathscr{N}=E[\mathscr{N}]VAR(P(\beta_M+u^{(M)}))+E[P(\beta_M+u^{(M)})]^2VAR(\mathscr{N})$$
 
 It is only approximate because the number of mutations in a line cannot be independent of the proportions, but the approximation should work well when mutations are rare. Under a neutral model, $P$ and $\beta_M+u^{(M)}$ are uncorrelated and so the variance of $P(\beta_M+u^{(M)})$ is $VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2$. Putting this together we have,
 
-$$\sigma^2_\mathscr{M}=E[\mathscr{M}][VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2]+E[P]^2\beta_M^2VAR(\mathscr{M})$$. 
+$$\sigma^2_\mathscr{N}=E[\mathscr{N}][VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2]+E[P]^2\beta_M^2VAR(\mathscr{N})$$. 
 
-If mutations arise from a Poisson process then $VAR(\mathscr{M})=E[\mathscr{M}]$ and we get
+If mutations arise from a Poisson process then $VAR(\mathscr{N})=E[\mathscr{N}]$ and we get
 
 \begin{equation}
 \begin{array}{rl}
-\sigma^2_\mathscr{M}=&E[\mathscr{M}](VAR(P)+E[P]^2)(\sigma^2_M+\beta_M^2)\\
-                    =&E[\mathscr{M}]E[P^2](\sigma^2_M+\beta_M^2)\\
+\sigma^2_\mathscr{N}=&E[\mathscr{N}](VAR(P)+E[P]^2)(\sigma^2_M+\beta_M^2)\\
+                    =&E[\mathscr{N}]E[P^2](\sigma^2_M+\beta_M^2)\\
 \end{array}
 \end{equation}
 
@@ -831,23 +831,23 @@ $$E[(PN)^2 | N] = \int_0^N\nu^2\frac{1}{\nu(\nu+1)}d\nu= N-ln(N+1)$$
 
 such that $E[P^2]=\frac{1}{N}-\frac{ln(N+1)}{N^2}$ and
 
-$$\sigma^2_\mathscr{M}=E[\mathscr{M}]\left(\frac{1}{N}-\frac{ln(N+1)}{N^2}\right)(\sigma^2_M+\beta_M^2)$$
+$$\sigma^2_\mathscr{N}=E[\mathscr{N}]\left(\frac{1}{N}-\frac{ln(N+1)}{N^2}\right)(\sigma^2_M+\beta_M^2)$$
 
-In a population of $N$ cells there has been $N$ fission events which means $E[\mathscr{M}]=N\mu_g$ where $\mu_g$ is the number of mutations per genome per generation. The contribution of new mutations to the between-line variance is therefore: 
+In a population of $N$ cells there has been $N$ fission events which means $E[\mathscr{N}]=N\mu_g$ where $\mu_g$ is the number of mutations per genome per generation. The contribution of new mutations to the between-line variance is therefore: 
 
-$$\sigma^2_\mathscr{M}=\mu_g\left(1-\frac{ln(N+1)}{N}\right)(\sigma^2_M+\beta_M^2)$$
+$$\sigma^2_\mathscr{N}=\mu_g\left(1-\frac{ln(N+1)}{N}\right)(\sigma^2_M+\beta_M^2)$$
 
 Since $ln(N+1)/N$ is so much smaller than one when $N$ is large this is approximately
 
-$$\sigma^2_\mathscr{M}\approx\mu_g[\sigma^2_M+\beta_M^2]$$
+$$\sigma^2_\mathscr{N}\approx\mu_g[\sigma^2_M+\beta_M^2]$$
 
-Perhaps surprisingly, the contribution of new mutations to the between-line variance does not depend on the total number of cells and therefore the number of generations that have elapsed, $\tau$. The effect of new mutations on the mean fitness of zero-mutant lines, however, does depends on $N$ and therefore $\tau$. Given the expected number of mutations per cell us $\mu_g\tau$, the contribution of the new mutations to the expected fitness in putatively zero-mutant lines is
+Perhaps surprisingly, the contribution of new mutations to the between-line variance does not depend on the total number of cells and therefore the number of generations that have elapsed, $\tau$. To understand this imagine $P$ is constant for a given $\mathscr{N}$ such that the variance scales linearly with $\mathscr{N}/P^2$. Since $\mathscr{N}$ scales linearly with $N$ and $P^2$ scales linearly with $1/N$ to a first approximation the two terms cancel. The effect of new mutations on the mean fitness of zero-mutant lines, however, does depends on $N$ and therefore $\tau$. Given the expected number of mutations per cell us $\mu_g\tau$, the contribution of the new mutations to the expected fitness in putatively zero-mutant lines is
 
-$$\beta_\mathscr{M}=\beta_M\mu_g\tau$$
+$$\beta_\mathscr{N}=\beta_M\mu_g\tau$$
 
 We can also derive this using the results of @Lea.1949:
 
-$$\beta_\mathscr{M}=E[u^{(\mathscr{M})}]=\beta_ME[\mathscr{M}]E[P]$$
+$$\beta_\mathscr{N}=E[u^{(\mathscr{N})}]=\beta_ME[\mathscr{N}]E[P]$$
 
 Since 
 
@@ -855,7 +855,7 @@ $$E[PN | N] = \int_0^N\nu\frac{1}{\nu(\nu+1)}d\nu= ln(N+1)$$
 
 we get
 
-$$\beta_\mathscr{M}=\beta_MN\mu_g\frac{ln(N+1)}{N}=\beta_M\mu_gln(N+1)$$. 
+$$\beta_\mathscr{N}=\beta_MN\mu_g\frac{ln(N+1)}{N}=\beta_M\mu_gln(N+1)$$. 
 
 This differs from $\beta_M\mu_g\tau$ by approximately a factor $ln(2)$. This is likely due to the Lea–Coulson approximation assuming mutant cells grow stochastically according to a Yule process rather than deterministic synchronous growth.  
 
@@ -893,7 +893,7 @@ sim_new<-function(tau, mu_g, b_M, s2_M){
 ```
 </div>
 
-We can take the average fitness of cells in a line, and by simulating a large number of lines (2,000) that have been propagated for varying numbers of generations ($\tau$ from 1 to 25) we can compute the relevant measures ($\beta_\mathscr{M}$, $\sigma^2_\mathscr{M}$, $E[P]$ and $E[P^2]$) and compare them against the theoretical expectations. We use $\mu_g=0.001$, $\beta_M=0.1$ and $\sigma^2_M=1$:
+We can take the average fitness of cells in a line, and by simulating a large number of lines (2,000) that have been propagated for varying numbers of generations ($\tau$ from 1 to 25) we can compute the relevant measures ($\beta_\mathscr{N}$, $\sigma^2_\mathscr{N}$, $E[P]$ and $E[P^2]$) and compare them against the theoretical expectations. We use $\mu_g=0.001$, $\beta_M=0.1$ and $\sigma^2_M=1$:
 
 ```{r eval=!rerun.newsim, echo=FALSE}
 mu_g_sim<-0.001
@@ -986,7 +986,7 @@ Since we assume both the mean and between-line variance scale linearly with the 
 \end{array}
 \end{equation}
 
-Again, assuming the number of true-positives and false-negatives are independent and Poisson distributed this becomes:
+Again, assuming the number of true-positives and false-positives are independent and Poisson distributed this becomes:
 
 \begin{equation}
 \begin{array}{rl}
@@ -1254,8 +1254,8 @@ save(m7,file=file.path(root,'models/m7.Rdata'))
 
 save(m1_correct,file=file.path(root,'models/m1_correct.Rdata'))
 save(m6_correct,file=file.path(root,'models/m6_correct.Rdata'))
-save(m1b_correct,file=file.path(root,'models/m1_correct.Rdata'))
-save(m6b_correct,file=file.path(root,'models/m6_correct.Rdata'))
+save(m1b_correct,file=file.path(root,'models/m1b_correct.Rdata'))
+save(m6b_correct,file=file.path(root,'models/m6b_correct.Rdata'))
 
 save(m1_mcmc,file=file.path(root,'models/m1_mcmc.Rdata'))
 save(m1_Sane,file=file.path(root,'models/m1_Sane.Rdata'))
