@@ -363,7 +363,7 @@ While there are significant deviations from expectation, the magnitude of the de
 We can also plot the data and some model predictions in order to get a feel for what the model is telling us
 
 <div class="fold s">
-```{r main_plot,  fig.width = 7,fig.height = 10, fig.cap="Raw growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. Replicates of non-ancestral lines are in orange and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate."}
+```{r main_plot,  fig.width = 7,fig.height = 10, fig.cap="Growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. The distribution of replicates from non-ancestral lines are represented as an orange violin plot and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate."}
 
 intercept=fixef(m1)['(Intercept)']
 mutation_effect=fixef(m1)['mutation']
@@ -401,13 +401,20 @@ df_plot<-df_plot[order(df_plot$point_col, decreasing=TRUE),]
 
 CI <- ggplot(plot_data, aes(pred_mutations, pred_mean)) +
 
-  ## a) raw-data points (jittered) -------------
-  geom_jitter(data = filter(df_plot, point_col != "other"),
+  ## a1) violin for orange data -----------------
+  geom_violin(data   = filter(df_plot, point_col == "orange"),
+              aes(x = mutation, y = r, group = mutation),
+              fill   = "darkorange", alpha = .4,
+              colour = NA,            # remove outline; set a colour if preferred
+              width  = .8,
+              show.legend = FALSE) +
+
+  ## a2) jittered blue points ------------------
+  geom_jitter(data = filter(df_plot, point_col == "blue"),
               aes(x = mutation, y = r, colour = point_col),
               width  = .20, height = 0, alpha = .5, show.legend = FALSE) +
 
-  scale_colour_manual(values = c(orange = "darkorange",
-                                 blue   = "darkblue")) +
+  scale_colour_manual(values = c(blue = "darkblue")) +
 
   ## b) regression line ------------------------
   geom_abline(intercept = intercept, slope = mutation_effect) +
@@ -420,7 +427,7 @@ CI <- ggplot(plot_data, aes(pred_mutations, pred_mean)) +
                 width = .5, colour = "black") +
 
   ## d) ancestor point -------------------------
-  annotate("point", x = 0, y = pred_ancestor, colour = "cyan", size = 3, alpha = 1)+
+  annotate("point", x = 0, y = pred_ancestor, colour = "cyan", size = 3, alpha = 1) +
 
   ## e) axes, labels, limits -------------------
   scale_x_continuous(limits = c(-.5, 3.5),
@@ -430,12 +437,11 @@ CI <- ggplot(plot_data, aes(pred_mutations, pred_mean)) +
   ## f) theme ----------------------------------
   theme_minimal(base_size = 11) +
   theme(
- #   axis.text   = element_text(face = "bold"),
-   axis.title  = element_text(size = 11),
+    axis.title   = element_text(size = 11),
     axis.title.y = element_text(margin = margin(t = 10, r = 20, b = 20))
   )
-
   plot(CI)
+
   if(save){
   ggsave(file.path(root,'models/fitness.jpeg'),width = 5, height = 4,units='in')
   }
@@ -451,7 +457,7 @@ table(subset(df, r<0.95)$line)
 We can highlight the data points in this line in red. 
 
 <div class="fold s">
-```{r ,  fig.width = 7,fig.height = 10, fig.cap="Raw growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. Replicates of non-ancestral lines are in orange and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate and the red points are from line 45"}
+```{r ,  fig.width = 7,fig.height = 10, fig.cap="Growth rate (log(OD) per hour) for lines grouped by number of accumulated mutations. The distribution of replicates from non-ancestral lines are represented as an orange violin plot and replicates of ancestral lines are in blue. The solid black line is the fitted regression with black dots representing the predicted mean fitness for lines with different numbers of mutation. The whiskers indicate the 95\\% quantiles for the line effects (full black bars) and the observations (dashed black bars). The cyan data point is the estimated mean ancestral growth rate and the red points are from line 45"}
 
 df_45 <- df_plot %>%filter(line == 45)
 CI2 <- CI +                                          # start from CI
@@ -611,11 +617,17 @@ We find that even when we only look at mutations that likely have a stronger eff
 A common practice when measuring bacterial growth curves is to standardize the inoculation cell density to minimize any influence of starting density on growth curve parameter estimates. While this what not feasible given the level of throughput, we can attempt to control for starting density (`startOD`) statistically. However, there is the danger that we control for some of the fitness variation we seek to measure if the fast growth of a line results in high starting density.  
 
 ```{r m4}
-m4<-lmer(r ~ mutation + anc + person + inner + startOD + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+m4<-lmer(r ~ mutation + anc + person + inner + log(startOD) + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
 summary(m4)
 ```
 
-The effect of starting density on the maximum growth rate is small and non-significant, and the impact on other model parameters is negligible.
+The effect of (log) starting density on the maximum growth rate is small and non-significant, and the impact on other model parameters is negligible.
+
+
+```{r m4b, echo=FALSE}
+m4b<-lmer(r ~ mutation + anc + person + inner + log(startOD) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+```
+
 
 ## Significance testing of random effect variances
 
@@ -720,22 +732,22 @@ We interpret our estimate of $\sigma^2_E$ (the variance associated with the `(no
 
 ## Mutation calling errors and mix-ups
 
-In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call it. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round(17/(194/196)+7/(192/196)-24, 2)` /188= `r round((17/(194/196)+7/(192/196)-24)/188, 4)` mutations per assayed line. We also resequenced twenty-two lines in order to assess whether there had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=$ 1/22=`r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The average number of called mutations per line will then be close to the expected number of true positives which is 202/188=`r round(202/188, 3)` among assayed lines. 
+In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call it. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round(17/(194/196)+7/(192/196)-24, 2)` /192= `r round((17/(194/196)+7/(192/196)-24)/192, 4)` mutations per sequenced line (4 sequenced lines were not assayed for fitness). We also resequenced twenty-two lines in order to assess whether there had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=$ 1/22=`r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The expected number of true positives will then be close to the average number of called mutations per line which is 202/192=`r round(202/192, 3)` among assayed lines. 
 
-To understand how omitted mutations contribute to the between line variance in putatively zero-mutant lines we can think about the number of omitted mutations, $\mathscr{O}$, in line $i$:
+To understand how omitted mutations contribute to the between line variance in growth rate we can think about the number of omitted mutations, $\mathscr{O}$, in line $i$:
 
 \begin{equation}
 \mathscr{O}_i=(1-\delta)n^{(fn)}_{i}+\delta(n^{(tp)}_{j}+n^{(fn)}_{j})
 \end{equation}
 
-where $n^{(fn)}$ and $n^{(tp)}$ are the number of false-negative and true-positive mutations in a line, and $\delta=1$ if line $i$ has been mixed up with line $j$ but is zero otherwise. Line $j$ is assumed to be a line drawn at random from all lines. The effect of these omitted mutations on a line's fitness is:
+where $n^{(fn)}$ and $n^{(tp)}$ are the number of false-negative and true-positive mutations in a line, and $\delta=1$ if line $i$ has been mixed up with line $j$ but is zero otherwise. Line $j$ is assumed to be a line drawn at random from all lines. The effect of these omitted mutations on line $i$'s growth rate is:
 
 
 \begin{equation}
-u^{(\mathscr{O})}_i=\sum_k^{\mathscr{O}_i} \beta_M+u^{(M)}_k
+sum_k^{\mathscr{O}_i}\left(\beta_M+u^{(M)}_k\right)
 \end{equation}
 
-If we take the expectation of this random sum we get the contribution of omitted mutations to the mean fitness of putatively zero-mutant lines
+If we take the expectation of this random sum we get the contribution of omitted mutations to the mean growth rate:
 
 \begin{equation}
 \begin{array}{rl}
@@ -745,7 +757,7 @@ If we take the expectation of this random sum we get the contribution of omitted
 \end{array}
 \end{equation}
 
-If we take the variance of the random sum we get the contribution of omitted mutations to the variance in fitness of putatively zero-mutant lines. Assuming the number of omitted mutations is independent of their effect, we can use the Blackwell-Girshick equation [@Blackwell.1979]:
+If we take the variance of the random sum we get the contribution of omitted mutations to the between-line variance in growth rate. Assuming the number of omitted mutations is independent of their effect, we can use the Blackwell-Girshick equation [@Blackwell.1979]:
 
 \begin{equation}
 \begin{array}{rl}
@@ -783,9 +795,9 @@ and so
 
 
 ```{r echo=FALSE}
-Efn<-(17/(194/196)+7/(192/196)-24)/188
+Efn<-(17/(194/196)+7/(192/196)-24)/192
 Efp<-Efn
-Etp<-202/188-Efp
+Etp<-202/192-Efp
 p_m<-1/22
 rho<-(1-p_m)*Etp/(Etp+Efp)
 tau<-60
@@ -796,15 +808,15 @@ Using our estimates of $E[n^{(fn)}]$=`r round(Efn, 4)`, $E[n^{(tp)}]$=`r round(E
 
 ## New mutations
 
-In the final round of MA a colony is grown from a single initial cell up to approximately x cells, this colony is frozen, and a sub-sample is taken and grown ..... Any mutation present in the initial cell will be called. Any new mutations that appear as the final colony grows, or between stock and sequencing, are extremely unlikely to be called since they would only be found in a small proportion of cells. However, new mutations that appear in the final colony, or between the final colony and the fitness assay stock, may in aggregate cause the fitness of the line to differ systematically from a zero-mutant line. Note that mutations that appear in each replicate after growing from the common stock will only contribute to the within-line (residual) variance and do not need to be considered.
+In the final round of MA, a colony is grown from a single initial cell up to approximately x cells, this colony is frozen, and a sub-sample is taken and grown ..... Any mutation present in the initial cell will be called. Any new mutations that appear as the final colony grows, or between stock and sequencing, are extremely unlikely to be called since they would only be found in a small proportion of cells. However, new mutations that appear in the final colony, or between the final colony and the fitness assay stock, may in aggregate cause the growth rate of the line to differ systematically from a truly zero-mutant line. Note that mutations that appear in each replicate after growing from the common stock will only contribute to the within-line (residual) variance and do not need to be considered.
 
 If we have $N_c$ as the number of cells in the final colony, and $N_1$ the number of cells which initiated the stock and $N_2$ the final number of cells in the stock, the number of cell divisions experienced by a cell is $\tau=log_2(N_c)+log_2(N_2)-log_2(N_1)$ assuming synchronous growth. From our MA lines the mutation rate per genome per generation was estimated to be $\mu_g=0.00105$ (see \citet{Lee2012RateSequencing} also) such that the expected number of mutations per line is $\tau\mu_g$. $log_2(N_c)$ is approximately 28 \citet{Lee2012RateSequencing} and $log_2(N_2)-log_2(N_1)$ is approximately 32 such that $\tau\mu_g=$ `r round(tau*mu_g,3)`. If the number of mutations per cell is Poisson distributed only a small proportion of cells will have new mutations  $1-e^{-\tau\mu_g}=$ `r round(1-exp(-tau*mu_g),3)` and of those, `r round(100*dpois(1, tau*mu_g)/(1-dpois(0, tau*mu_g)))`\% will only carry a single mutation. Note the average number of cell divisions experienced by cells in the final colony will exceed $log_2(N_c)$ since colony growth is asymmetric [@Gralka.2016] which will mean $\tau$ is underestimated and $\mu_g$ is overestimated since $log_2(N_c)$ is used to convert the number of accumulated mutations into a rate per generation [@GrosseSommer.2026a]. 
 
-To understand how these new mutations contribute to the between line variance we can think about the number of new mutations (as opposed to the number of mutants) in a line, $\mathscr{N}$, and the number of cells that carry each of those mutations, a mutation's clone size. For new mutation $k$ in line $i$, the clone size is $N_iP_{ki}$ where $N_i$ is the total number of cells in the stock of line $i$ and $P_{ik}$ the proportion of cells that carry mutation $k$.  The aggregate effect of new mutations on line $i$'s fitness is then a sum of each mutations fitness effect ($\beta_M+u^{(M)}_k$) weighted by the frequency of that mutation, $P_k$:
+To understand how these new mutations contribute to the between line variance we can think about the number of new mutations (as opposed to the number of mutants) in a line, $\mathscr{N}$, and the number of cells that carry each of those mutations, a mutation's clone size. For new mutation $k$ in line $i$, the clone size is $N_iP_{ki}$ where $N_i$ is the total number of cells in the stock of line $i$ and $P_{ik}$ the proportion of cells that carry mutation $k$.  The aggregate effect of new mutations on line $i$'s growth rate is then a sum of each mutations fitness effect weighted by the frequency of that mutation:
 
-$$u^{(\mathscr{N})}_i=\sum^{\mathscr{N}_i}_i P_{ik}(\beta_M+u^{(M)}_{ik})$$
+$$\sum^{\mathscr{N}_i}_iP_{ik}(\beta_M+u^{(M)}_{ik})$$
 
- The variance of this sum across lines is the contribution of new mutations to the between-line variance in putatively zero-mutant lines, which we will designate as $\sigma^2_\mathscr{N}$. The variance of this sum can be approximated by the Blackwell-Girshick equation [@Blackwell.1979]. 
+ The variance of this sum across lines is the contribution of new mutations to the between-line variance in growth rate, which we will designate as $\sigma^2_\mathscr{N}$. The variance of this sum can be approximated by the Blackwell-Girshick equation [@Blackwell.1979]. 
 
 $$\sigma^2_\mathscr{N}=E[\mathscr{N}]VAR(P(\beta_M+u^{(M)}))+E[P(\beta_M+u^{(M)})]^2VAR(\mathscr{N})$$
 
@@ -821,7 +833,7 @@ If mutations arise from a Poisson process then $VAR(\mathscr{N})=E[\mathscr{N}]$
 \end{array}
 \end{equation}
 
-@Lea.1949 give the probability mass function for a mutation's clone size under synchronous growth given the total population size:
+@Lea.1949 give the probability mass function for a mutation's clone size given the total population size, assuming synchronous growth:
 
 $$Pr(PN=\nu | N)=\frac{1}{\nu(\nu+1)}$$. 
 
@@ -841,7 +853,7 @@ Since $ln(N+1)/N$ is so much smaller than one when $N$ is large this is approxim
 
 $$\sigma^2_\mathscr{N}\approx\mu_g[\sigma^2_M+\beta_M^2]$$
 
-Perhaps surprisingly, the contribution of new mutations to the between-line variance does not depend on the total number of cells and therefore the number of generations that have elapsed, $\tau$. To understand this imagine $P$ is constant for a given $\mathscr{N}$ such that the variance scales linearly with $\mathscr{N}/P^2$. Since $\mathscr{N}$ scales linearly with $N$ and $P^2$ scales linearly with $1/N$ to a first approximation the two terms cancel. The effect of new mutations on the mean fitness of zero-mutant lines, however, does depends on $N$ and therefore $\tau$. Given the expected number of mutations per cell us $\mu_g\tau$, the contribution of the new mutations to the expected fitness in putatively zero-mutant lines is
+Perhaps surprisingly, the contribution of new mutations to the between-line variance does not depend on the total number of cells and therefore the number of generations that have elapsed, $\tau$. To understand this imagine $P$ is constant for a given $\mathscr{N}$ such that the variance scales linearly with $\mathscr{N}/P^2$. Since $\mathscr{N}$ scales linearly with $N$ and $P^2$ scales linearly with $1/N$ to a first approximation, the two terms cancel. The effect of new mutations on the mean growth rate, however, does depend on $\tau$ and therefore $N$. Given the expected number of mutations per cell us $\mu_g\tau$, the contribution of the new mutations to the expected fitness in putatively zero-mutant lines is
 
 $$\beta_\mathscr{N}=\beta_M\mu_g\tau$$
 
@@ -977,12 +989,13 @@ lines(I((1/N)-log(N+1)/N^2)~tau, data=newsim, col="red")
 
 We do not know what the true values of $\beta_M$ and $\sigma^2_M$ but we do have estimates for them. However, these estimates will be biased when the number of putative mutations is not equal to the number of true mutations.  
 
-Since we assume both the mean and between-line variance scale linearly with the number of mutations, we can get an approximate expression for the bias from linear-regression theory: $E[\widehat{\beta_M}] = \rho \beta_M$ and  $E[\widehat{\sigma^2_M}] = \rho \sigma^2_M$ where $\rho$ is the regression of the number of true mutations ($n^{(tp)}+n^{(fp)}$) on the number of putative mutations:
+Since we assume both the mean and between-line variance scale linearly with the number of mutations, we can get an approximate expression for the bias from linear-regression theory: $E[\widehat{\beta_M}] = \rho \beta_M$ and  $E[\widehat{\sigma^2_M}] = \rho \sigma^2_M$ where $\rho$ is the regression of the number of true mutations ($n^{(tp)}+n^{(fn)}$) on the number of putative mutations ($n^{(tp)}+n^{(fp)}$):
+
 
 \begin{equation}
 \begin{array}{rl}
-\rho =& \frac{COV((1-\delta)(n^{(tp)}_{i}+n^{(fn)}_{i})+\delta(n^{(tp)}_{j}+n^{(fn)}_{j}), n^{(tp)}_{i}+n^{(fp)}_{i})}{VAR((1-\delta)(n^{(tp)}_{i}+n^{(fn)}_{i})+\delta(n^{(tp)}_{j}+n^{(fn)}_{j}))}\\
-=& \frac{(1-p_M)VAR(n^{(tp)})}{VAR(n^{(tp)}+n^{(fn)})}\\
+\rho =& \frac{COV((1-\delta)(n^{(tp)}_{i}+n^{(fp)}_{i})+\delta(n^{(tp)}_{j}+n^{(fp)}_{j}), n^{(tp)}_{i}+n^{(fn)}_{i})}{VAR((1-\delta)(n^{(tp)}_{i}+n^{(fp)}_{i})+\delta(n^{(tp)}_{j}+n^{(fp)}_{j}))}\\
+=& \frac{(1-p_M)VAR(n^{(tp)})}{VAR(n^{(tp)}+n^{(fp)})}\\
 \end{array}
 \end{equation}
 
@@ -994,8 +1007,7 @@ Again, assuming the number of true-positives and false-positives are independent
 \end{array}
 \end{equation}
 
-We do not know the expected number of false-positives per line, but we expect it to be very low. Assuming it is the same as the expected false-negative rate we get $\rho$=`r round(rho, 4)`: the attenuation due to false-positives and mix-ups is modest. Note that the number of false-negatives do not appear in this expression because they introduce Berkson errors rather than classical errors and therefore do not result in slope attenuation \citep{Berkson.1950}.   
-
+We do not know the expected number of false-positives per line, but we expect it to be very low. Assuming it is the same as the expected false-negative rate we get $\rho$=`r round(rho, 4)`: the attenuation due to false-positives and mix-ups is modest. Note that the number of false-negatives do not appear in this expression because they introduce Berkson errors rather than classical errors and therefore do not result in slope attenuation [@Berkson.1950].   
 
 
 The expected between-line variance is 
@@ -1103,7 +1115,7 @@ Efp_sim<-0.1
 
 <div class="fold s">
 ```{r sim_correction, eval=rerun.estsim}
-nlines<-188
+nlines<-192
 nrep<-14
 nsim<-500
 
@@ -1217,23 +1229,24 @@ summary(m1_correct)
 
 Since the original estimates of $\beta_M$ and $\sigma^2_M$ were small and non-significant we did not expect large changes in the estimate of $\sigma^2_E$, and indeed it was `r round(VarCorr(m1_correct)$line/VarCorr(m1)$line,5)` times its original value. We do expect mutation calling errors, mix-ups and new mutations to make it harder to detect non-genetic between line variance and indeed the p-value is less extreme, although $\sigma^2_E$ still remains significantly different from zero.
 
-```{r }
+```{r m_correct}
 m6_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
 anova(m1_correct, m6_correct)
 ```
 
-We can also perform these tests assuming that the number of novel mutations and all error rates are an order of magnitude larger than what we estimate.
+$\sigma^2_E$ remains significant even if we assume a 50\% mix-up rate and that 50\% of true mutations were missed and 50\% of called mutations are false-positives:
 
-```{r }
-m1b_correct<-m_correction(r~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g*10, Etp=202/188-Efp*10, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
-m6b_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g*10, Etp=202/188-Efp*10, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
+```{r m_correct2}
+m1b_correct<-m_correction(r~mutation + anc + person + inner + (noanc-1|line) + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=202/192, Efp=(202/192)/2, Efn=(202/192)/2, p_m=1/2)
+
+m6b_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), n="mutation", data=df, tau=tau, mu_g=mu_g, Etp=202/192, Efp=(202/192)/2, Efn=(202/192)/2, p_m=1/2)
+
 
 anova(m1b_correct, m6b_correct)
 ```
 
-$\sigma^2_E$ remains significantly different from zero, although the p-value is less extreme, as expected. 
 
 ```{r confidenceIntervals, eval=rerun.confint, echo=FALSE}
 ci_m1=confint(m1, method="profile", signames=FALSE)
@@ -1248,6 +1261,7 @@ save(m1,file=file.path(root,'models/m1.Rdata'))
 save(m2,file=file.path(root,'models/m2.Rdata'))
 save(m3,file=file.path(root,'models/m3.Rdata'))
 save(m4,file=file.path(root,'models/m4.Rdata'))
+save(m4b,file=file.path(root,'models/m4b.Rdata'))
 save(m5,file=file.path(root,'models/m5.Rdata'))
 save(m6,file=file.path(root,'models/m6.Rdata'))
 save(m7,file=file.path(root,'models/m7.Rdata'))
