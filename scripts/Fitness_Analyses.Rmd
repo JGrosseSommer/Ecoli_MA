@@ -144,7 +144,7 @@ with(od_df, highOD[which(highOD & plate%in%c(7,28) & row!="G")]<-FALSE)
 
 In 40 cases the initial culture looked like it hadn't grown, and in an error of judgement the culture was not assayed for growth and the well was either blacked-out (2-A-8 and 1-A-5, see above) or left empty (otherwise). 
 
-```{r empty_wells}
+```{r emptr_wells}
 plate.blank<-c(1, 2, 3, 5, 7, 9, 11, 11, 11, 15, 15, 15, 17, 19, 19, 21, 21, 21, 23, 23, 23, 25, 25, 27, 2, 8, 12, 18, 20, 22, 22, 22, 24, 24, 26, 28, 28, 28, 10, 10)
 row.blank<-c("A", "A", "A", "B", "D", "H", "B", "D", "F", "F", "G", "H", "G", "B", "C", "A", "E", "F", "E", "F", "F", "C", "C", "D", "A", "C", "B", "F", "H", "A", "B", "H", "G", "F", "F", "C", "A", "E", "D", "H")
 column.blank<-c(5, 8, 6, 3, 10, 5, 2, 3, 7, 6, 6, 12, 7, 12, 12, 6, 7, 8, 2, 2, 12, 2, 8, 2, 8, 12, 8, 4, 5, 8, 10, 10, 1, 1, 1, 2, 9, 9, 8, 12)
@@ -154,7 +154,7 @@ column.blank<-c(5, 8, 6, 3, 10, 5, 2, 3, 7, 6, 6, 12, 7, 12, 12, 6, 7, 8, 2, 2, 
 od_df <- mutate(group_by(od_df, plate, row, column), empty = paste(plate, row, column)%in%paste(plate.blank, row.blank, column.blank))
 ```
 
-```{r plot_empty_wells, echo=FALSE}
+```{r plot_emptr_wells, echo=FALSE}
 plot(OD~jitter(timepoint,2),data=subset(od_df, empty), pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
 ```
 
@@ -183,7 +183,7 @@ points(OD~timepoint, data=subset(od_df, extra_empty), pch=16, cex=0.5, col="red"
 
 Nevertheless, three replicates of line 180 did grow despite starting at a low OD:
 
-```{r plot_empty_wells2, echo=FALSE}
+```{r plot_emptr_wells2, echo=FALSE}
 plot(OD~jitter(timepoint,2),data=subset(od_df, !empty & !extra_empty), pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
 points(OD~timepoint, data=subset(od_df, line=="180"), pch=16, cex=0.5, col="red")
 ```
@@ -474,10 +474,21 @@ CI2 <- CI +                                          # start from CI
 ```
 </div>
 
+We can also check to make sure that the between-line variance in zero-mutant lines isn't been driven by one or two extreme lines (the red point is for the ancestor):
+
+
+```{r ,  fig.width = 7,fig.height = 10}
+
+zero_m_means<-with(df_plot %>% filter(mutation == 0), tapply(r, line, mean))
+
+plot(zero_m_means, col=(names(zero_m_means)=="anc")+1, pch=16, cex=1.5, bty="l", ylab="Mean Maximum Growth Rate", xaxt='n', xlab="Line")
+```
+
+The line means take on a range of values without any obvious outliers or bimodality, suggesting missed mutations or rare but extreme environmental effects cannot explain the results. The ancestor also has a growth rate that exceeds the average by some margin, but is not necessarily unusual with respect to the distribution of line means (see below). 
+
 ## Obtaining the DFE 
 
-The previous model provides a model for the growth rates of each line. However, 
-to obtain the DFE we need to compute the distribution of relative fitnesses for single-mutant lines compared to zero-mutant lines. The expected growth rate of single-mutant lines ($r_w$) is the intercept, $\beta_0$.
+The previous model provides a model for the growth rates of each line. However, to obtain the DFE we need to compute the distribution of relative fitnesses for single-mutant lines compared to zero-mutant lines. The expected growth rate of single-mutant lines ($r_w$) is the intercept, $\beta_0$.
 
 \begin{equation}
 r_w = \beta_0
@@ -528,10 +539,17 @@ m1_mcmc<-MCMCglmm(r~mutation+anc+person+inner,
                   longer=10, verbose=FALSE)
 ```
 
-The model estimates are very close to those obtained using restricted maximum likelihood:
+The model estimates are very close to those obtained using restricted maximum likelihood (REML):
 
 ```{r }   
 summary(m1_mcmc)
+```
+
+And the conclusions drawn from the posterior distributions of the biological fixed effects and variance components are consistent with those obtained using REML:
+
+```{r } 
+plot(m1_mcmc$Sol[,c("mutation", "anc")])
+plot(m1_mcmc$VCV[,c("line", "sqrt(mutation).line")])
 ```
 
 We can obtain the posterior distributions for the mean and variance of the DFE
@@ -1246,6 +1264,119 @@ m6b_correct<-m_correction(r~mutation + anc + person + inner + (sqrt(mutation)-1|
 
 anova(m1b_correct, m6b_correct)
 ```
+
+# Antedependence Models of Environmental Effects
+
+In the discussion we touched on a number of topics that implicitly assumed an antedependence model for the environmental contribution to the between-line variance. Here, we give a short non-technical summary and a more theoretical development of these ideas in order to fix some concepts more precisely.
+
+In what follows we envisage a set-up where a number of MA lines have been propagated for a number of generations from a common ancestor. From each line, a number of sub-lines are then generated and propagated until their growth rates are measured. These measurements constitute the replicates for each line. We envisage a model for the non-mutational (henceforth environmental) effects whereby new environmental perturbations are constantly being introduced in a (sub)line but their effects decay over time. In what follows, two key concepts need to be understood: a) environmental perturbations that arise in a line before the sub-lines are generated will generate between-line variance if they have not decayed by the time measurements are made and b) in the early stages of MA the between-line environmental variance will be small, but as new environmental perturbations are added each generation the environmental variance will increase to some equilibrium value where the input of new environmental perturbations is balanced by the decay of historical perturbations. Concept a) allows us to imagine an experimental design that minimises the environmental between-line variance: if sub-lines can be propagated for as many generations as it takes for their shared environmental effects to decay, any `memory' of historical environmental perturbations will be lost and there will be no environmental between-line variance, only within-line. In cases where these requirements cannot be met, Concept b) allows us to imagine an alternative experimental design. If the MA lines have been propagated for a sufficiently long period then the environmental variance will have come to an equilibrium and the environmental between-line variance will be constant over subsequent generations. However, the mutational variance will continue to increase each generation (since mutations do not decay) such that *changes* in the between-line variance over the course of an MA experiment can give an estimate of the mutational variance.      
+
+To understand these intuitive ideas more formally, we use an antedependence model for the growth rate measurement on replicate $j$ for line $i$ taken in generation $t$:
+
+\begin{equation}
+r_{ij, t} = g_{i,t-1} + \psi E_{i,t-1}+g^{'}_{i,t}+E^{'}_{i,t}+e_{ij,t}
+\end{equation}
+
+where $g_{i,t-1}$ is the genetic value in the previous generation and $g^{'}_{i,t}$ the increment in the current generation due to new mutations. $E_{i,t-1}$ is the environmental effect in the previous generation that is passed on with fidelity $\psi$ and $E^{'}_{i,t}$ is the increment in this inherited environmental effect. $e_{ij,t}$ is the environmental effect specific to that measurement and includes measurement error. We can rewrite the equation as
+
+\begin{equation}
+r_{ij, t} = \sum_{k=0}^{t} g^{'}_{i,k} + \sum_{k=0}^{t} \psi^{t-k}E^{'}_{i,k}+e_{ij,t}
+\end{equation}
+
+The between-line covariance between a set of replicates who had a common ancestor at time $t$ and were measured at time $t+m$ and $t+n$ (i.e the two sub-lines were propagated for $m$ and $n$ generations respectively) is:
+
+\begin{equation}
+\begin{array}{rl}
+%Cov(r_{ij, t+m},r_{ij, t+n}) =& Cov\left(\sum_{k=0}^{t+m} g^{'}_{i,k} + \sum_{k=0}^{t+m} \psi^{t+m-k}E^{'}_{i,k}+e_{ij,t}, \sum_{k=0}^{t+n} g^{'}_{i,k} + \sum_{k=0}^{t+n} \psi^{t+n-k}E^{'}_{i,k}+e_{ij,t+n}\right)\\
+%Cov(r_{ij, t+m},r_{ij, t+n}) =& Cov\left(\sum_{k=0}^{t+m} g^{'}_{i,k} + \sum_{k=0}^{t+m} \psi^{t+m-k}E^{'}_{i,k}, \sum_{k=0}^{t+n} g^{'}_{i,k} + \sum_{k=0}^{t+n} \psi^{t+n-k}E^{'}_{i,k}\right)\\
+%Cov(r_{ij, t+m},r_{ij, t+n}) =& Cov\left(\sum_{k=0}^{t} g^{'}_{i,k} + \sum_{k=0}^{t} \psi^{t+m-k}E^{'}_{i,k}, \sum_{k=0}^{t} g^{'}_{i,k} + \sum_{k=0}^{t} \psi^{t+n-k}E^{'}_{i,k}\right)\\
+%Cov(r_{ij, t},r_{ij, t+n}) =& t\sigma^2_M+ Cov\left(\sum_{k=0}^{t} \psi^{t+m-k}E^{'}_{i,k}, \sum_{k=0}^{t} \psi^{t+n-k}E^{'}_{i,k}\right)\\
+%Cov(r_{ij, t+m},r_{ij, t+n}) =& t\sigma^2_M+ \sum_{k=0}^{t} Cov\left(\psi^{t+m-k}E^{'}_{i,k}, \psi^{t+n-k}E^{'}_{i,k}\right)\\
+%Cov(r_{ij, t+m},r_{ij, t+n}) =& t\sigma^2_M+ \sum_{k=0}^{t} \psi^{t+m-k}\psi^{t+n-k}Var(E^{'}_{i,k})\\
+%Cov(r_{ij, t+m},r_{ij, t+n}) =& t\sigma^2_M+ \sum_{k=0}^{t} \psi^{2(t-k)}\psi^{n+m}Var(E^{'}_{i,k})\\
+COV(r_{ij, t+m},r_{ij, t+n}) =& t\sigma^2_M + \psi^{n+m}\sigma^2_E\sum_{k=1}^{t}\psi^{2(t-k)}\\
+\end{array}
+\end{equation}
+
+assuming that the new mutational and inherited environmental increments are identically and independently distributed, both across lines and in time, with variances $\sigma^2_M$ and $\sigma^2_E$ respectively. Here, $g^{'}_{i,0}$ and $E^{'}_{i,0}$ are constant as all lines are assumed to have been derived from the same ancestor at time zero, although this could be relaxed. $t\sigma^2_M$ is the accumulated mutational variance which grows linearly in time because mutational effects are passed on with perfect fidelity (assuming no directional epistasis). $\sigma^2_E\sum_{k=1}^{t}\psi^{2(t-k)}$ is the amount of environmental variance that has accumulated by time $t$ and this increases quickly initially, but asymptotes to $\sigma^2_E/(1-\psi^2)$ as $t$ becomes large. However, the environmental effect initially shared by a set of sub-lines will decay independently in each sub-line as they are propagated, thus reducing their contribution to the between-line covariance by an amount $\psi^{m+n}$.  In Figure \@ref(fig:ante) we give a graphical representation of these equations (see caption for details). 
+
+
+<div class="fold s">
+```{r ante, fig.width = 10, fig.height = 6, fig_caption="Between-line variances as a function of A) how many generations ($t$) of MA have been conducted assuming no generations separate replicates from their common ancestor ($m=n=0$) and B) how many generations separate replicates from their common ancestor ($m=n$) given 30 generations of MA ($t=30$). The dashed black and red line is the total between-line variance which can be decomposed into contributions from the mutational variance (black) and inherited environmental variance (red). The parameters $\\sigma^2_E=1$, $\\sigma^2_M=0.04$, $\\psi=0.9$ were used. At $t=30$ the inherited environmental variance is close to its stationary value $\\sigma^2_E/(1-\\psi^2)=5.26$"}
+# Note the resulting between-line (co)variance matrix assumes
+# m=n=0 along the diagonal and m=0 for the off-diagonals 
+
+sd_E<-1    # standard deviation of new environmental effects
+sd_M<-0.2  # standard deviation of new mutational effects
+psi<-0.9   # transmissibility of environmental effects
+n_t<-30    # number of generations
+n_l<-10000 # number of lines
+start_staionarity<-FALSE  # should the process be initiated assuming stationarity
+
+
+if(start_staionarity){ 
+  e<-rnorm(n_l, 0, sd_E/sqrt(1-psi^2))
+}else{ 
+  e<-rep(0, n_l)              # ancestral environmental effects (same for all lines)
+}
+
+g<-rep(0, n_l)              # ancestral genetic effects (same for all lines)
+ 
+y<-matrix(NA, n_t, n_l)     # matrix of line means (columns) in each generation (row)
+ 
+for(i in 1:n_t){
+e<-rnorm(n_l, e*psi, sd_E)  # inherit part of e from previous generation and add some new e
+g<-rnorm(n_l, g*1.0, sd_M)  # inherit all of g from previous generation and add some new g
+
+y[i,]<-e+g                 # lines means
+}
+ 
+V<-cov(t(y))  # n_t by n_t (co)variance matrix over lines            
+ 
+par(mfrow=c(1,2))
+t<-1:n_t
+k<-n_t:1
+pred<-t*sd_M^2+cumsum(psi^(2*(n_t-k)))*sd_E^2
+par(mar=c(5, 4.5, 4, 2) + 0.1)
+plot(pred, xlab="Generation (t)", ylab="Between-line Variance", ylim=c(0,max(pred)), col="red", type="l", bty="l", cex.lab=1.5, lwd=2)
+text(2, 6.3, "A)", cex=2)
+lines(pred, lty=2, lwd=2)
+lines(t*sd_M^2, lwd=2)
+lines(cumsum(psi^(2*(n_t-k)))*sd_E^2, lwd=2, col="red")
+
+t<-1:n_t
+k<-n_t:1
+VE<-sum(psi^(2*(n_t-k)))*sd_E^2
+
+n<-0:30
+pred<-max(t)*sd_M^2+(psi^(2*n))*VE
+par(mar=c(5, 4.5, 4, 2) + 0.1)
+plot(pred~n, xlab="Generations since common ancestor (m)", ylab="Between-line Variance", ylim=c(0,max(pred)), col="red", type="l", bty="l", cex.lab=1.5, lwd=2)
+text(30, 6.3, "B)", cex=2)
+lines(pred~n, lty=2, lwd=2)
+abline(h=max(t)*sd_M^2, lwd=2)
+lines((psi^(2*n))*VE, lwd=2, col="red")
+```
+</div>
+
+The notation is sufficiently general to cover most MA procedures and measurement protocols. In most large multicelluar organisms $m$ will often be one. For example, an MA line may be propagated by brother-sister mating and at generation $t+1$ a brother and sister are retained as the founders of the next generation and their remaining siblings (the sub-lines) are measured.  In most microbial work $m$ may be quite large as a sub-line is grown up and the fitness assays are inherently multigenerational. For example, in our experiment, each sub-line was grown for 16 hours from frozen stock followed by 4 hours on a 96-well plate within which fitness was measured as the growth rate over a twenty minute period. $m$ is therefore likely to be 10's of generations. At the other extreme, it may be possible to obtain measurements on parents and offspring.  Then, $m=0$ (for the parent) and $n=1$ (for the offspring) and the between-line (co)variance can be estimated.   
+
+If $t$ is sufficiently large, the contribution of the inherited environmental variance to the between-line variance becomes constant, and then the slope of the regression of the between-line variance on generation is a good estimator of $\sigma^2_M$. However, if the inherited environmental effects have yet to reach stationarity ($t<15$ in Figure \@ref(fig:ante)) then the slope would overestimate $\sigma^2_M$ due to the environmental contribution still increasing over time. If $m$ is sufficiently large then the shared environmental effects will have dissipated ($m>20$ in Figure \@ref(fig:ante)) and no longer contribute to the between-line variance, which is then a good estimator of $\sigma^2_M$.  
+
+If fitness measurements were available at a range of $t$ and/or $m$, yet it was found that neither $t$ or $m$ were sufficiently large for the environmental between-line variance to asymptote (to zero if $m$ is large), the data could still be used to get estimates of $\sigma^2_M$ by fitting an antedependence model and co-estimating $\sigma^2_E$  and $\psi$, in addition to $\sigma^2_M$.  Such a model has been developed and fitted to data collected on *Drosophila melanogaster* MA lines [@Mackay.1995]. However, it should be emphasised that in that paper the non-linear change in the between-line variance is attributed to selection operating on new mutations which essentially causes mutational effects to be inherited without perfect fidelity, as measured through $\psi$. In addition, the authors also note that excess residual heterozygosity in the ancestor (relative to the asymptotic with-line genetic variance expected under MA) and diminishing returns epistasis would also cause the between-line variance to increase faster in early generations, and so interpreting $\psi$ as a measure of selection requires some care. The issue of excess residual heterozygosity, at least, can be dealt with by discarding data from the first $6N_e$ generations of MA, since beyond this the within-line genetic variance will have stabilised at its equilibrium value (where $N_e$ is the effective population size of an MA line). 
+
+For completeness, the within-line variance is
+
+\begin{equation}
+\begin{array}{rl}
+%Var(r_{ij, t+m} | g^{'}_{i,t}, E^{'}_{i,t}) =& Var\left(\sum_{k=1}^{m} g^{'}_{i,t+k} + \sum_{k=1}^{m} \psi^{m-k}E^{'}_{i,t+k}+e_{ij,t+m}\right)\\
+%Var(r_{ij, t+m} | g^{'}_{i,t}, E^{'}_{i,t})=&m\sigma^2_M+Var\left(\sum_{k=1}^{m} \psi^{m-k}E^{'}_{i,t+k}\right)+V_e\\
+VAR(r_{ij, t+m} | g^{'}_{i,t}, E^{'}_{i,t})=&m\sigma^2_M+\sigma^2_E\sum_{k=1}^{m} \psi^{2(m-k)}+V_e\\
+\end{array}
+\end{equation}
+
+where $m\sigma^2_M$ is the accumulated mutational variance in that replicate, $\sigma^2_E\sum_{k=1}^{m} \psi^{2(m-k)}$ is the contribution of inherited environmental effects that have arisen in the replicate and $V_e$ the variance in non-inherited environmental effects. Note that if the organism was sexual there would be additional within-line genetic variance due to recombination and segregation.  
+
 
 
 ```{r confidenceIntervals, eval=rerun.confint, echo=FALSE}
