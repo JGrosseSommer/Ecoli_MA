@@ -22,12 +22,11 @@ bibliography: /Users/jhadfiel/Work/Tex/library/JarLib.bib
   });
 </script>
 
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 rerun.r<-TRUE
-rerun.confint<-TRUE
+rerun.confint<-FALSE
 rerun.mcmc<-FALSE
 rerun.newsim<-FALSE
 rerun.estsim<-FALSE
@@ -951,15 +950,17 @@ newsim[,"tau"]<-1:max_tau
 
 for(tau in 1:max_tau){
 
-    res<-matrix(NA, nlines, 4)
+    res<-matrix(NA, nlines, 3)
     colnames(res)<-c("Ew", "EP", "EP2")
 
     for(i in 1:nlines){
 
-      w<-sim_new(tau mu_g=mu_g_sim, b_M=b_M_sim, s2_M=s2_M_sim)
+      N<-2^tau
+      
+      w<-sim_new(tau=tau, mu_g=mu_g_sim, b_M=b_M_sim, s2_M=s2_M_sim)
 
       res[i,"Ew"]<-mean(w)  # mean fitness of cells 
-
+      
       P<-table(w)/N
       P<-P[-which(names(P)=="0")]
 
@@ -1077,26 +1078,34 @@ m_correction<-function(formula, data, dtau=NULL, mu_g=NULL, Etp=NULL, Efp=NULL, 
     anc<-FALSE
   }
 
-  ff<-gsub(" ", "", formula)[3]
+  ff<-gsub(" ", "", formula)
 
-  if(any(grepl("new_n|new_n2|line2", ff))){
+  if(any(grepl("new_n|new_n2|line2", ff[3]))){
     stop("Sorry new_n, new_n2 and line2 are reserved, please rename these variables")
   }
 
-  if(!grepl("(^|\\+)n($|\\+)", ff)){
+  if(!grepl("(^|\\+)n($|\\+)", ff[3])){
      stop("expecting n to be fitted as a covariate in model formula")
   }
 
-  if(!grepl("\\(sqrt\\(n\\)-1\\|line\\)", ff)){
+  if(!grepl("\\(sqrt\\(n\\)-1\\|line\\)", ff[3])){
      stop("expecting (sqrt(n)-1|line) to be fitted in model formula")
   }
  
+  ff[3]<-gsub("^n\\+", "new_n+", ff[3])
+  ff[3]<-gsub("\\+n\\+", "+new_n+", ff[3])
+  ff[3]<-gsub("\\+n$", "+new_n", ff[3])
+  ff[3]<-gsub("\\(sqrt\\(n\\)-1\\|line\\)", "(sqrt(new_n2)-1|line)", ff[3])
+  # ensures equivalent fixed effects stay in the same position and variances are offset by one
+
+  updated_formula<-as.formula(paste(ff[c(2,1,3)], collapse=""))
+
   if(anc){
-    formula<-update(formula, .~new_n+(noanc-1|line2)+(sqrt(new_n2)-1|line)+.-n-(sqrt(n)-1|line))
+    updated_formula<-update(updated_formula, .~(noanc-1|line2)+.)
   }else{
-    formula<-update(formula, .~new_n+(1|line2)+(sqrt(new_n2)-1|line)+.-n-(sqrt(n)-1|line))
+    updated_formula<-update(updated_formula, .~(1|line2)+.)
   }
-  # add new_n as the first fixed predictor and line2 as the first set of random effects
+  # add line2 as the first set of random effects
 
   rho<-(1-p_m)*Etp/(Etp+Efp)
 
@@ -1113,13 +1122,14 @@ m_correction<-function(formula, data, dtau=NULL, mu_g=NULL, Etp=NULL, Efp=NULL, 
   nLL<-function(par, data, m1, formula, mu_g, Etp, Efn, p_m, nLLonly=TRUE){
 
      bMbias<-(mu_g+Efn+p_m*Etp+p_m*(1-p_m)*(Etp^2))*par^2
-     bMbias<-1e-8
 
-     beta_start<-fixef(m1)$cond[-which(names(fixef(m1)$cond)=="n")]
-     beta_start<-c(beta_start[1], par, beta_start[-1])
+     n_pos<-which(names(fixef(m1)$cond)=="n")
+
+     beta_start<-fixef(m1)$cond
+     beta_start[n_pos]<-par
 
      beta_map<-seq_along(beta_start)
-     beta_map[2]<-NA
+     beta_map[n_pos]<-NA
      beta_map<-as.factor(beta_map)
 
      theta_start<-c(log(sqrt(bMbias)), log(sqrt(unlist(VarCorr(m1)$cond))))
@@ -1137,9 +1147,9 @@ m_correction<-function(formula, data, dtau=NULL, mu_g=NULL, Etp=NULL, Efp=NULL, 
      }
   }
 
-  bM<-optim(par=fixef(m1)$cond["n"], nLL, data=data, m1=m1, formula=formula, mu_g=mu_g, Etp=Etp, Efn=Efn, p_m=p_m, hessian=FALSE)$par
+  bM<-optim(par=fixef(m1)$cond["n"], nLL, data=data, m1=m1, formula=updated_formula, mu_g=mu_g, Etp=Etp, Efn=Efn, p_m=p_m, hessian=FALSE)$par
 
-  return(nLL(par=bM, data=data, m1=m1, formula=formula, mu_g=mu_g, Etp=Etp, Efn=Efn, p_m=p_m, nLLonly=FALSE))
+  return(nLL(par=bM, data=data, m1=m1, formula=updated_formula, mu_g=mu_g, Etp=Etp, Efn=Efn, p_m=p_m, nLLonly=FALSE))
 }
 ```
 </div>
@@ -1151,6 +1161,7 @@ We can test how well this model recovers true values using simulation. We simula
 mu_g_sim<-0.01
 dtau_sim<-20
 
+b_E_sim<-0
 b_M_sim<-0.5
 s2_M_sim<-1
 s2_E_sim<-0.5
@@ -1168,9 +1179,9 @@ nlines<-192
 nrep<-14
 nsim<-500
 
-estsim<-matrix(NA, nsim, 6)
+estsim<-matrix(NA, nsim, 8)
 
-colnames(estsim)<-c("b_M.1", "s2_E.1", "s2_M.1", "b_M.2", "s2_E.2", "s2_M.2")
+colnames(estsim)<-c("b_E.1", "b_M.1", "s2_E.1", "s2_M.1", "b_E.2", "b_M.2", "s2_E.2", "s2_M.2")
 
 for(i in 1:nsim){
 
@@ -1187,7 +1198,7 @@ for(i in 1:nsim){
 
   line_mean<-unlist(lapply(sapply(n_true, rnorm, mean=b_M_sim, sd=sqrt(s2_M_sim)), sum)) 
   # effect of true mutations
-  line_mean<-line_mean+rnorm(nlines, 0, sqrt(s2_E_sim))
+  line_mean<-line_mean+rnorm(nlines, b_E_sim, sqrt(s2_E_sim))
   # effect of line environment
 
   for(j in 1:nlines){
@@ -1198,13 +1209,13 @@ for(i in 1:nsim){
   y<-sapply(line_mean, function(x){rnorm(nrep, x, sqrt(s2_e_sim))})
   # generate nrep replicates per line and add noise
 
-  dat<-data.frame(y=c(y), line=as.factor(rep(1:nlines, each=nrep)), n_obs=rep(n_obs, each=nrep))
+  dat<-data.frame(y=c(y), line=as.factor(rep(1:nlines, each=nrep)), n=rep(n, each=nrep))
 
   m1.sim<-glmmTMB(y~n+(1|line)+(sqrt(n)-1|line), data=dat)
 
   m2.sim<-m_correction(y~n+(1|line)+(sqrt(n)-1|line), data=dat, dtau=dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
-  estsim[i,]<-c(fixef(m1.sim)$cond["n"], unlist(VarCorr(m1.sim)$cond), fixef(m2.sim)$cond["new_n"], unlist(VarCorr(m2.sim)$cond)[c("line", "line.1")])
+  estsim[i,]<-c(fixef(m1.sim)$cond, unlist(VarCorr(m1.sim)$cond), fixef(m2.sim)$cond, unlist(VarCorr(m2.sim)$cond)[c("line", "line.1")])
 
   print(i)
 
@@ -1228,11 +1239,16 @@ We can start by plotting the naive estimates, with true values in blue and their
 ```{r estsim_plot1, fig.width = 6, fig.height = 12}
 rho_sim<-(1-p_m_sim)*Etp_sim/(Etp_sim+Efp_sim)
 
-par(mfrow=c(3,1))
+par(mfrow=c(2,2))
 hist(estsim[,"b_M.1"], xlab=expression(widehat(beta[M])), main="", breaks=50)
 abline(v=b_M_sim, col="blue")
 abline(v=mean(estsim[,"b_M.1"]))
 abline(v=rho_sim*b_M_sim, col="red")
+
+hist(estsim[,"b_E.1"], xlab=expression(widehat(beta[M])), main="", breaks=50)
+abline(v=b_E_sim, col="blue")
+abline(v=mean(estsim[,"b_E.1"]))
+abline(v=(mu_g_sim*dtau_sim+Efn_sim+p_m_sim*Etp_sim)*b_E_sim, col="red")
 
 hist(estsim[,"s2_M.1"], xlab=expression(widehat(sigma[M]^2)), main="", breaks=50)
 abline(v=s2_M_sim, col="blue")
@@ -1248,11 +1264,17 @@ abline(v=s2_E_sim+(b_M_sim^2+s2_M_sim)*(mu_g_sim+Efn_sim+p_m_sim*Etp_sim)+p_m_si
 There are substantial biases in the estimates and these are well predicted by our theoretical expectations. We can also look at the estimates from the model that tries to accommodate mutation calling errors, mix-ups and novel mutations. Again, we plot the true values in blue, the expected `naive' biased estimator in red and the mean of the estimates in black.  
 
 ```{r estsim_plot2, fig.width = 6, fig.height = 12}
-par(mfrow=c(3,1))
+par(mfrow=c(2,2))
 hist(estsim[,"b_M.2"], breaks=30, xlab=expression(widehat(beta[M])), main="")
 abline(v=b_M_sim, col="blue")
 abline(v=mean(estsim[,"b_M.2"]))
 abline(v=rho_sim*b_M_sim, col="red")
+
+hist(estsim[,"b_E.2"], breaks=30, xlab=expression(widehat(beta[M])), main="")
+abline(v=b_E_sim, col="blue")
+abline(v=mean(estsim[,"b_E.2"]))
+abline(v=(mu_g_sim*dtau_sim+Efn_sim+p_m_sim*Etp_sim)*b_E_sim, col="red")
+
 
 hist(estsim[,"s2_M.2"], breaks=30, xlab=expression(widehat(sigma[M]^2)), main="")
 abline(v=s2_M_sim, col="blue")
@@ -1296,13 +1318,12 @@ anova(m1b_correct, m6b_correct)
 
 ```
 
-$\sigma^2_E$ remains significant even if we assume a 50\% mix-up rate and that 50\% of true mutations were missed and 50\% of called mutations are false-positives:
+$\sigma^2_E$ remains significant even if we assume the error rates and $\Delta\tau$ are an order of magnitude larger than there assumed values:
 
 ```{r mc_correct}
-m1c_correct<-m_correction(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau, mu_g=mu_g, Etp=202/192, Efp=(202/192)/2, Efn=(202/192)/2, p_m=1/2)
+m1c_correct<-m_correction(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
-m6c_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau, mu_g=mu_g, Etp=202/192, Efp=(202/192)/2, Efn=(202/192)/2, p_m=1/2)
-
+m6c_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
 anova(m1c_correct, m6c_correct)
 ```
@@ -1446,17 +1467,21 @@ save(m6b_correct,file=file.path(root,'models/m6b_correct.Rdata'))
 save(m1c_correct,file=file.path(root,'models/m1c_correct.Rdata'))
 save(m6c_correct,file=file.path(root,'models/m6c_correct.Rdata'))
 
-
-save(m1_mcmc,file=file.path(root,'models/m1_mcmc.Rdata'))
-save(m1_Sane,file=file.path(root,'models/m1_Sane.Rdata'))
-save(m1_Sane_mcmc,file=file.path(root,'models/m1_Sane_mcmc.Rdata'))
-save(m2_Sane,file=file.path(root,'models/m2_Sane.Rdata'))
+# save mcmc models intervals
+if(rerun.mcmc){
+  save(m1_mcmc,file=file.path(root,'models/m1_mcmc.Rdata'))
+  save(m1_Sane,file=file.path(root,'models/m1_Sane.Rdata'))
+  save(m1_Sane_mcmc,file=file.path(root,'models/m1_Sane_mcmc.Rdata'))
+  save(m2_Sane,file=file.path(root,'models/m2_Sane.Rdata'))
+}
 
 # save confidence intervals
-save(ci_m1,file=file.path(root,'models/ci_m1.Rdata'))
-save(ci_m3,file=file.path(root,'models/ci_m3.Rdata'))
-save(ci_m1_Sane,file=file.path(root,'models/ci_m1_Sane.Rdata'))
-save(ci_m2_Sane,file=file.path(root,'models/ci_m2_Sane.Rdata'))
+if(rerun.confint){
+  save(ci_m1,file=file.path(root,'models/ci_m1.Rdata'))
+  save(ci_m3,file=file.path(root,'models/ci_m3.Rdata'))
+  save(ci_m1_Sane,file=file.path(root,'models/ci_m1_Sane.Rdata'))
+  save(ci_m2_Sane,file=file.path(root,'models/ci_m2_Sane.Rdata'))
+  }
 ```
 
 
