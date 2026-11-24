@@ -30,7 +30,7 @@ rerun.confint<-FALSE
 rerun.mcmc<-FALSE
 rerun.newsim<-FALSE
 rerun.estsim<-FALSE
-save<-TRUE   # save models/simulations if reran
+save<-FALSE   # save models/simulations if reran
 
 if(Sys.info()["nodename"]%in%c("sce-bio-c04553", "SCE-BIO-C07467", "S42-76R7VW5J")){
   root<-"/Users/jhadfiel/Work/Ecoli_MA"
@@ -207,10 +207,10 @@ In order to get an estimate of the growth rate in the exponential phase we can u
 df <- mutate(group_by(od_df, plate, row, column), deriv = calc_deriv(x = timepoint, y = OD, percapita = TRUE, blank = 0, window_width_n = 3, trans_y = 'log'))
 ```
 
-For each well, the maximum average change is taken as the growth rate:
+For each well, the maximum average change is taken as the growth rate (`r`) and we can also obtain the OD at the time the maximum growth rate is achieved (`midOD`):
 
 ```{r sum_growth_rate, eval=rerun.r}
-df <- summarize(df, r = max_gc(deriv), across(-c(timepoint, OD, deriv),first))
+df <- summarize(df, r = max_gc(deriv),  midOD=OD[which.max(deriv)], across(-c(timepoint, OD, deriv),first))
 ```
 
 Since growth rates may be different in the inner wells, we can create a factor for modelling this
@@ -303,7 +303,7 @@ m1<-lmer(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|pla
 The basic biological model is:
 
 \begin{equation}
-r_{ij} = \beta_0+\delta^{(A)}_i\beta_A+n_i\beta_M+(1-\delta^{(A)}_i)u^{(E)}_i+\sqrt{n_i}u^{(M)}_i+e_{ij}$$
+r_{ij} = \beta_0+\delta^{(A)}_i\beta_A+n_i\beta_M+(1-\delta^{(A)}_i)u^{(E)}_i+\sqrt{n_i}u^{(M)}_i+e_{ij}
 \end{equation}
 
 where $r_{ij}$ is the maximum growth rate of replicate $j$ from line $i$. When the line is an ancestral line, $\delta^{(A)}$ (`anc`) is one but is zero for MA lines. $n_i$ (`n`) is the number of called mutations that may be zero even for MA lines.
@@ -629,7 +629,7 @@ summary(m3)
 
 We find that even when we only look at mutations that likely have a stronger effect on fitness, mutations do not significantly influence growth rate. 
 
-## Can the between-line variance be explained by variation in starting OD?
+## Can the results be explained by variation in OD at the start or when the maximum growth rate is achieved?
 
 A common practice when measuring bacterial growth curves is to standardize the inoculation cell density to minimize any influence of starting density on growth curve parameter estimates. While this what not feasible given the level of throughput, we can attempt to control for starting density (`startOD`) statistically. However, there is the danger that we control for some of the fitness variation we seek to measure if the fast growth of a line results in high starting density.  
 
@@ -645,6 +645,18 @@ The effect of (log) starting density on the maximum growth rate is small and non
 m4b<-lmer(r ~ n + anc + person + inner + log(startOD) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
 ```
 
+It is well known that OD is only directly proportional to cell density at low densities, and at high densities the relationship becomes shallower than one. Consequently, replicates that achieve their maximum growth rate at high densities will have their maximum growth rate underestimated. If the density at which maximum growth rate is achieved systematically varies over lines, then this bias in maximum growth rate will appear as between-line variance. To test for this we can control for the density at when the  maximum growth rate is achieved (`midOD`):
+
+```{r m5}
+m5<-lmer(r ~ n + anc + person + inner + log(midOD) + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+summary(m5)
+```
+
+The effect of (log) density on the maximum growth rate is small and non-significant, and the impact on other model parameters is negligible.
+
+```{r m5b, echo=FALSE}
+m5b<-lmer(r ~ n + anc + person + inner + log(midOD) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+```
 
 ## Significance testing of random effect variances
 
@@ -655,9 +667,9 @@ To test the significance of the fixed effects we use t-tests with the degrees of
 We can omit the term `(sqrt(n)-1|line)` from model `m1` to test whether the variance of the DFE is non-zero
 
 
-```{r m5}
-m5<-lmer(r ~ n + anc + person + inner + (noanc-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
-anova(m5,m1)
+```{r m6}
+m6<-lmer(r ~ n + anc + person + inner + (noanc-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+anova(m6,m1)
 ```
 
 The evidence is not strong
@@ -666,15 +678,15 @@ The evidence is not strong
 
 We can omit the term `(noanc-1|line)` from model `m1` to test whether the variance of the EDFE is non-zero
 
-```{r m6}
-m6<-lmer(r ~ n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
-anova(m6,m1)
+```{r m7}
+m7<-lmer(r ~ n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+anova(m7,m1)
 ```
 
 There is strong evidence that lines vary in their fitness due to things other than the mutations they've accumulated.
 
-```{r m7, echo=FALSE}
-m7<-lmer(r ~ n + anc + person + inner  + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
+```{r m8, echo=FALSE}
+m8<-lmer(r ~ n + anc + person + inner  + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
 # additional analysis for performing LRT on the total between-line variance
 ```
 
@@ -761,10 +773,10 @@ where $n^{(fn)}$ and $n^{(tp)}$ are the number of false-negative and true-positi
 
 
 \begin{equation}
-\sum_k^{\mathscr{O}_i}\left(\beta_M+u^{(M)}_k\right)
+\sum_k^{\mathscr{O}_i}\left(\beta_M+u^{(\mathscr{M})}_k\right)
 \end{equation}
 
-If we take the expectation of this random sum we get the contribution of omitted mutations to the mean growth rate:
+where $u^{(\mathscr{M})}_{ik}$ is the effect of mutation $k$ in line $i$ on the growth rate, as a deviation from the average effect, $\beta_M$. Note that this is different from $u^{(M)}$ which is the (scaled) effect of all mutations in a line rather than the effect of individual mutations. If we take the expectation of this random sum we get the contribution of omitted mutations to the mean growth rate:
 
 \begin{equation}
 \begin{array}{rl}
@@ -778,7 +790,7 @@ If we take the variance of the random sum we get the contribution of omitted mut
 
 \begin{equation}
 \begin{array}{rl}
-\sigma^2_{\mathscr{O}}=&VAR(\mathscr{O})E[\beta_M+u^{(M)}]^2+E[\mathscr{O}]VAR(\beta_M+u^{(M)})\\
+\sigma^2_{\mathscr{O}}=&VAR(\mathscr{O})E[\beta_M+u^{(\mathscr{M})}]^2+E[\mathscr{O}]VAR(\beta_M+u^{(\mathscr{M})})\\
                       =&VAR(\mathscr{O})\beta_M^2+E[\mathscr{O}]\sigma^2_M\\
 \end{array}
 \end{equation}
@@ -830,13 +842,13 @@ In the final round of MA, a single initial cell forms a colony over 24 hours whi
 
 To understand how these novel mutations contribute to the between line variance we can think about the number of novel mutations (as opposed to the number of mutants) in the frozen stock of a line, $\mathscr{N}$, and the number of cells that carry each of those mutations, a mutation's clone size. Note that mutations that appear in each replicate after growing from the common stock will only contribute to the within-line (residual) variance and so we only consider mutations that appear in the frozen stock and are shared across replicates.  For novel mutation $k$ in line $i$, the clone size is $N_iP_{ki}$ where $N_i$ is the total number of cells in the stock of line $i$ and $P_{ik}$ the proportion of cells that carry mutation $k$.  The aggregate effect of shared novel mutations on line $i$'s growth rate is then a sum of each mutations fitness effect weighted by the frequency of that mutation:
 
-$$\sum^{\mathscr{N}_i}_kP_{ik}(\beta_M+u^{(M)}_{ik})$$
+$$\sum^{\mathscr{N}_i}_kP_{ik}(\beta_M+u^{(\mathscr{M})}_{ik})$$
 
  The variance of this sum across lines is the contribution of novel mutations to the between-line variance in growth rate, which we will designate as $\sigma^2_\mathscr{N}$. The variance of this sum can be approximated by the Blackwell-Girshick equation [@Blackwell.1979]. 
 
-$$\sigma^2_\mathscr{N}\approx E[\mathscr{N}]VAR(P(\beta_M+u^{(M)}))+E[P(\beta_M+u^{(M)})]^2VAR(\mathscr{N})$$
+$$\sigma^2_\mathscr{N}\approx E[\mathscr{N}]VAR(P(\beta_M+u^{(\mathscr{M})}))+E[P(\beta_M+u^{(\mathscr{M})})]^2VAR(\mathscr{N})$$
 
-It is only approximate because the number of mutations in a line cannot be independent of the proportions, but the approximation should work well when mutations are rare. Under a neutral model, $P$ and $\beta_M+u^{(M)}$ are uncorrelated and so the variance of $P(\beta_M+u^{(M)})$ is $VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2$. Putting this together we have,
+It is only approximate because the number of mutations in a line cannot be independent of the proportions, but the approximation should work well when mutations are rare. Under a neutral model, $P$ and $\beta_M+u^{(\mathscr{M})}$ are uncorrelated and so the variance of $P(\beta_M+u^{(\mathscr{M})})$ is $VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2$. Putting this together we have,
 
 $$\sigma^2_\mathscr{N}\approx E[\mathscr{N}][VAR(P)\sigma^2_M+\sigma^2_ME[P]^2+VAR(P)\beta_M^2]+E[P]^2\beta_M^2VAR(\mathscr{N})$$. 
 
@@ -876,19 +888,19 @@ The effect of novel mutations on mean fitness will be proportional to the expect
 
 We can also derive this using the results of @Lea.1949:
 
-$$E[\sum^{\mathscr{N}}_kP_{k}(\beta_M+u^{(M)}_{k})]=\beta_ME[\mathscr{N}]E[P]$$
+$$E[\sum^{\mathscr{N}}_kP_{k}(\beta_M+u^{(\mathscr{M})}_{k})]=\beta_ME[\mathscr{N}]E[P]$$
 
 where $\mathscr{N}$ is now, with some abuse of notation, the number of novel mutations that appear prior to the fitness measurement, not prior to freezing. Since 
 
 $$E[PN | N] = \int_0^N\nu\frac{1}{\nu(\nu+1)}d\nu= ln(N+1)$$
 
-we get
+we find that the effect of novel mutations on mean fitness is:
 
-$$\beta_\mathscr{N}=\beta_MN\mu_g\frac{ln(N+1)}{N}=\beta_M\mu_gln(N+1)$$. 
+$$\beta_MN\mu_g\frac{ln(N+1)}{N}=\beta_M\mu_gln(N+1)$$. 
 
 This differs from $\beta_M\mu_g\tau$ by approximately a factor $ln(2)$. This is likely due to the Lea–Coulson approximation assuming mutant cells grow stochastically according to a Yule process rather than deterministic synchronous growth.  
 
-In our analysis, we compare our MA lines to to the ancestor, and so the contribution of novel mutations to the comparison will depend on the difference in the number of novel mutations between MA lines and the ancestor, not the number of novel mutations in the MA lines *per se*:
+Since all MA lines experience the same number of generations, the effect of novel mutations on mean fitness will be independent of the number of mutations carried by an MA line. However, the ancestral line may have experienced a different number of generations from the MA lines which will generate a difference in mean fitness due to novel mutations. In what follows, we attempt to correct the mean fitness of MA lines only for the differential effect of novel mutations on MA lines versus the ancestor:
 
 $$\beta_\mathscr{N}=\beta_M\mu_g\Delta\tau$$
 
@@ -911,9 +923,9 @@ sim_new<-function(tau, mu_g, b_M, s2_M){
       w[Njm1+1:Njm1]<-w[1:Njm1]  # assign 'parent' fitness to 'offspring'
 
       nmu<-rpois(1, mu_g*2^j)      # determine total number of mutations
-      
+
       if(nmu>0){
-        mu_pos<-sample(1:(2^j), nmu) 
+        mu_pos<-sample(1:(2^j), min(c(nmu, 2^j))) 
         # determine the cells in which mutations happen (note double mutants not allowed)
         
         w[mu_pos]<-w[mu_pos]+rnorm(nmu, b_M, sqrt(s2_M))
@@ -1032,27 +1044,26 @@ Again, assuming the number of true-positives and false-positives are independent
 
 We do not know the expected number of false-positives per line, but we expect it to be very low. Assuming it is the same as the expected false-negative rate we get $\rho$=`r round(rho, 4)`: the attenuation due to false-positives and mix-ups is modest. Note that the number of false-negatives do not appear in this expression because they introduce Berkson errors rather than classical errors and therefore do not result in slope attenuation [@Berkson.1950].   
 
-
-The expected between-line variance is 
+The expected between-line variance for MA lines, conditional on the number of putative mutations ($n^{(tp)}+n^{(fp)}$) is 
 
 \begin{equation}
 \begin{array}{rl}
-\sigma^2_L =&\rho(n^{(tp)}+n^{(fp)})\sigma^2_M+\mu_g(\beta_M^2+\sigma^2_M)+(E[n^{(fn)}]+p_mE[n^{(tp)}])(\beta_M^2+\sigma^2_M)+p_m(1-p_m)E[n^{(tp)}]^2\beta_M^2+\sigma^2_E\\
+V_{MA} =&\rho(n^{(tp)}+n^{(fp)})\sigma^2_M+\mu_g(\beta_M^2+\sigma^2_M)+(E[n^{(fn)}]+p_mE[n^{(tp)}])(\beta_M^2+\sigma^2_M)+p_m(1-p_m)E[n^{(tp)}]^2\beta_M^2+\sigma^2_E\\
 
-\sigma^2_L =&\left(\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\right)\sigma^2_M+\left(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2+\sigma^2_E\\
+V_{MA} =&\left(\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\right)\sigma^2_M+\left(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2+\sigma^2_E\\
 
 \end{array}
 \end{equation}
 
-The expected mean fitness (compared to the ancestor) is 
+The expected difference between the ancestor's fitness and the mean fitness of the MA lines is
 
 \begin{equation}
 \begin{array}{rl}
-\beta_L=&\beta_M(\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\Delta\tau)\\
+E[r_A-r_{MA}]=&\beta_A-\beta_M(\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\Delta\tau)\\
 \end{array}
 \end{equation}
 
-`m_correction` is a function that can fit this model using maximum-likelihood. The covariate $n$ ($n^{(tp)}+n^{(fp)}$) is replaced by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\Delta\tau$ in the fixed formula (with coefficient $\beta_M$) and by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g$ in the random slope formula. If a column `noanc` is present in the data frame, the covariates are set to zero for observations on ancestral lines. An additional between-line variance component is included with the variance $\left(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2$. Conditional on $\beta_M$, the model is a standard linear-mixed model and the likelihood extracted. We fit the mixed model using glmmTMB since it allows variances to be fixed, unlike lmer. `optim` is used to select the $\beta_M$ that maximises the conditional likelihood.
+`m_correction` is a function that can fit this model using maximum-likelihood. A model formula is passed together with the data frame, the error rate parameters (`Etp`, `Efp`, `Efn` and `p_m`), $\mu_g$ (`mu_g`) and $\Delta\tau$ (`dtau`). The model formula should contain the terms `n` and `(sqrt(n)-1|line)` where `n` is the number of mutations. The covariate $n$ ($n^{(tp)}+n^{(fp)}$) is replaced by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g\Delta\tau$ in the fixed formula (with coefficient $\beta_M$) and by $\rho(n^{(tp)}+n^{(fp)})+E[n^{(fn)}]+p_mE[n^{(tp)}]+\mu_g$ in the random slope formula. An additional between-line variance component is included with the variance $\left(\mu_g+E[n^{(fn)}]+p_mE[n^{(tp)}]+p_m(1-p_m)E[n^{(tp)}]^2\right)\beta_M^2$. If a column `anc` (indicating whether a line is ancestral (1) or not (0)) is present in the data frame, the covariates and additional variance component are set to zero for observations on ancestral lines, under the assumption they are free of any error.  Note that in this instance it is the contribution of novel mutations to the *difference* between the ancestor and MA lines that is corrected through the term `dtau` (i.e.  $\beta_A$ is corrected, but $\beta_0$ remains biased by novel mutations). If a column `anc` is not present a value for `dtau` can be passed that is equal to the number of generations experienced by MA lines and the effect of novel mutations on $\beta_0$ will be corrected for ($\beta_A$ is not defined in this case). Conditional on $\beta_M$, the model is a standard linear-mixed model and the likelihood extracted. We fit the mixed model using glmmTMB since it allows variances to be fixed, unlike lmer. `optim` is used to select the $\beta_M$ that maximises the conditional likelihood.
    
 <div class="fold s">
 ```{r m_correction}
@@ -1161,7 +1172,7 @@ We can test how well this model recovers true values using simulation. We simula
 mu_g_sim<-0.01
 dtau_sim<-20
 
-b_E_sim<-0
+b_0_sim<-0
 b_M_sim<-0.5
 s2_M_sim<-1
 s2_E_sim<-0.5
@@ -1181,7 +1192,7 @@ nsim<-500
 
 estsim<-matrix(NA, nsim, 8)
 
-colnames(estsim)<-c("b_E.1", "b_M.1", "s2_E.1", "s2_M.1", "b_E.2", "b_M.2", "s2_E.2", "s2_M.2")
+colnames(estsim)<-c("b_0.1", "b_M.1", "s2_E.1", "s2_M.1", "b_0.2", "b_M.2", "s2_E.2", "s2_M.2")
 
 for(i in 1:nsim){
 
@@ -1196,13 +1207,14 @@ for(i in 1:nsim){
   n_true<-ntp+nfn                       # True mutations 
   n<-(1-delta)*(ntp+nfp)+delta*nj       # Observed mutations   
 
-  line_mean<-unlist(lapply(sapply(n_true, rnorm, mean=b_M_sim, sd=sqrt(s2_M_sim)), sum)) 
+  line_mean<-unlist(lapply(sapply(n_true, rnorm, mean=b_M_sim, sd=sqrt(s2_M_sim)), sum))
+
   # effect of true mutations
-  line_mean<-line_mean+rnorm(nlines, b_E_sim, sqrt(s2_E_sim))
+  line_mean<-line_mean+rnorm(nlines, b_0_sim, sqrt(s2_E_sim))
   # effect of line environment
 
   for(j in 1:nlines){
-    line_mean<-line_mean+mean(sim_new(dtau_sim, mu_g_sim, b_M_sim, s2_M_sim))
+    line_mean[j]<-line_mean[j]+mean(sim_new(dtau_sim, mu_g_sim, b_M_sim, s2_M_sim))
     # add the contribution of novel mutations
   }
 
@@ -1213,7 +1225,7 @@ for(i in 1:nsim){
 
   m1.sim<-glmmTMB(y~n+(1|line)+(sqrt(n)-1|line), data=dat)
 
-  m2.sim<-m_correction(y~n+(1|line)+(sqrt(n)-1|line), data=dat, dtau=dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+  m2.sim<-m_correction(y~n+(1|line)+(sqrt(n)-1|line), data=dat, dtau=dtau_sim, mu_g=mu_g_sim, Etp=Etp_sim, Efp=Efp_sim, Efn=Efn_sim, p_m=p_m_sim)
 
   estsim[i,]<-c(fixef(m1.sim)$cond, unlist(VarCorr(m1.sim)$cond), fixef(m2.sim)$cond, unlist(VarCorr(m2.sim)$cond)[c("line", "line.1")])
 
@@ -1236,7 +1248,7 @@ load(file.path(root,'models/estsim.Rdata'))
 We can start by plotting the naive estimates, with true values in blue and their expected (biased) values in red and observed means in black:
 
 
-```{r estsim_plot1, fig.width = 6, fig.height = 12}
+```{r estsim_plot1, fig.width = 8, fig.height = 8}
 rho_sim<-(1-p_m_sim)*Etp_sim/(Etp_sim+Efp_sim)
 
 par(mfrow=c(2,2))
@@ -1245,10 +1257,10 @@ abline(v=b_M_sim, col="blue")
 abline(v=mean(estsim[,"b_M.1"]))
 abline(v=rho_sim*b_M_sim, col="red")
 
-hist(estsim[,"b_E.1"], xlab=expression(widehat(beta[M])), main="", breaks=50)
-abline(v=b_E_sim, col="blue")
-abline(v=mean(estsim[,"b_E.1"]))
-abline(v=(mu_g_sim*dtau_sim+Efn_sim+p_m_sim*Etp_sim)*b_E_sim, col="red")
+hist(estsim[,"b_0.1"], xlab=expression(widehat(beta[0])), main="", breaks=50)
+abline(v=b_0_sim, col="blue")
+abline(v=mean(estsim[,"b_0.1"]))
+abline(v=(Efn_sim+p_m_sim*Etp_sim+mu_g_sim*dtau_sim)*b_M_sim+b_0_sim, col="red")
 
 hist(estsim[,"s2_M.1"], xlab=expression(widehat(sigma[M]^2)), main="", breaks=50)
 abline(v=s2_M_sim, col="blue")
@@ -1263,18 +1275,17 @@ abline(v=s2_E_sim+(b_M_sim^2+s2_M_sim)*(mu_g_sim+Efn_sim+p_m_sim*Etp_sim)+p_m_si
 
 There are substantial biases in the estimates and these are well predicted by our theoretical expectations. We can also look at the estimates from the model that tries to accommodate mutation calling errors, mix-ups and novel mutations. Again, we plot the true values in blue, the expected `naive' biased estimator in red and the mean of the estimates in black.  
 
-```{r estsim_plot2, fig.width = 6, fig.height = 12}
+```{r estsim_plot2, fig.width = 8, fig.height = 8}
 par(mfrow=c(2,2))
 hist(estsim[,"b_M.2"], breaks=30, xlab=expression(widehat(beta[M])), main="")
 abline(v=b_M_sim, col="blue")
 abline(v=mean(estsim[,"b_M.2"]))
 abline(v=rho_sim*b_M_sim, col="red")
 
-hist(estsim[,"b_E.2"], breaks=30, xlab=expression(widehat(beta[M])), main="")
-abline(v=b_E_sim, col="blue")
-abline(v=mean(estsim[,"b_E.2"]))
-abline(v=(mu_g_sim*dtau_sim+Efn_sim+p_m_sim*Etp_sim)*b_E_sim, col="red")
-
+hist(estsim[,"b_0.2"], breaks=30, xlab=expression(widehat(beta[0])), main="")
+abline(v=b_0_sim, col="blue")
+abline(v=mean(estsim[,"b_0.2"]))
+abline(v=(Efn_sim+p_m_sim*Etp_sim+mu_g_sim*dtau_sim)*b_M_sim+b_0_sim, col="red")
 
 hist(estsim[,"s2_M.2"], breaks=30, xlab=expression(widehat(sigma[M]^2)), main="")
 abline(v=s2_M_sim, col="blue")
@@ -1300,21 +1311,21 @@ summary(m1_correct)
 
 Since the original estimates of $\beta_M$ and $\sigma^2_M$ were small and non-significant we did not expect large changes in the estimate of $\sigma^2_E$, and indeed it was `r round(VarCorr(m1_correct)$line/VarCorr(m1)$line,5)` times its original value. We do expect mutation calling errors, mix-ups and novel mutations to make it harder to detect non-genetic between line variance and indeed the p-value is less extreme, although $\sigma^2_E$ still remains significantly different from zero.
 
-```{r m6_correct}
-m6_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+```{r m7_correct}
+m7_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
-anova(m1_correct, m6_correct)
+anova(m1_correct, m7_correct)
 ```
 
 Assuming  $\Delta\tau=$ `r -dtau` makes little difference
 
 ```{r mb_correct}
 m1b_correct<-m_correction(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=-dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
-m6b_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=-dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
+m7b_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=-dtau, mu_g=mu_g, Etp=Etp, Efp=Efp, Efn=Efn, p_m=p_m)
 
 summary(m1b_correct)
 
-anova(m1b_correct, m6b_correct)
+anova(m1b_correct, m7b_correct)
 
 ```
 
@@ -1323,9 +1334,9 @@ $\sigma^2_E$ remains significant even if we assume the error rates and $\Delta\t
 ```{r mc_correct}
 m1c_correct<-m_correction(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
-m6c_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
+m7c_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
-anova(m1c_correct, m6c_correct)
+anova(m1c_correct, m7c_correct)
 ```
 
 # Antedependence Models of Environmental Effects
@@ -1365,7 +1376,7 @@ assuming that the new mutational and inherited environmental increments are iden
 
 
 <div class="fold s">
-```{r ante, fig.width = 10, fig.height = 6, fig_caption="Between-line variances as a function of A) how many generations ($t$) of MA have been conducted assuming no generations separate replicates from their common ancestor ($m=n=0$) and B) how many generations separate replicates from their common ancestor ($m=n$) given 30 generations of MA ($t=30$). The dashed black and red line is the total between-line variance which can be decomposed into contributions from the mutational variance (black) and inherited environmental variance (red). The parameters $\\sigma^2_E=1$, $\\sigma^2_M=0.04$, $\\psi=0.9$ were used. At $t=30$ the inherited environmental variance is close to its stationary value $\\sigma^2_E/(1-\\psi^2)=5.26$"}
+```{r ante, fig.width = 10, fig.height = 6, fig.cap="Between-line variances as a function of A) how many generations ($t$) of MA have been conducted assuming no generations separate replicates from their common ancestor ($m=n=0$) and B) how many generations separate replicates from their common ancestor ($m=n$) given 30 generations of MA ($t=30$). The dashed black and red line is the total between-line variance which can be decomposed into contributions from the mutational variance (black) and inherited environmental variance (red). The parameters $\\sigma^2_E=1$, $\\sigma^2_M=0.04$, $\\psi=0.9$ were used. At $t=30$ the inherited environmental variance is close to its stationary value $\\sigma^2_E/(1-\\psi^2)=5.26$"}
 # Note the resulting between-line (co)variance matrix assumes
 # m=n=0 along the diagonal and m=0 for the off-diagonals 
 
@@ -1422,7 +1433,7 @@ lines((psi^(2*n))*VE, lwd=2, col="red")
 ```
 </div>
 
-The notation is sufficiently general to cover most MA procedures and measurement protocols. In most large multicelluar organisms $m$ will often be one. For example, an MA line may be propagated by brother-sister mating and at generation $t+1$ a brother and sister are retained as the founders of the next generation and their remaining siblings (the sub-lines) are measured.  In most microbial work $m$ may be quite large as a sub-line is grown up and the fitness assays are inherently multigenerational. For example, in our experiment, each sub-line was grown for 16 hours from frozen stock followed by 4 hours on a 96-well plate within which fitness was measured as the growth rate over a twenty minute period. $m$ is therefore likely to be 10's of generations. At the other extreme, it may be possible to obtain measurements on parents and offspring.  Then, $m=0$ (for the parent) and $n=1$ (for the offspring) and the between-line (co)variance can be estimated.   
+The notation is sufficiently general to cover most MA procedures and measurement protocols. In most large multicellular organisms $m$ will often be one. For example, an MA line may be propagated by brother-sister mating and at generation $t+1$ a brother and sister are retained as the founders of the next generation and their remaining siblings (the sub-lines) are measured.  In most microbial work $m$ may be quite large as a sub-line is grown up and the fitness assays are inherently multigenerational. For example, in our experiment, each sub-line was grown for 16 hours from frozen stock followed by 4 hours on a 96-well plate within which fitness was measured as the growth rate over a twenty minute period. $m$ is therefore likely to be 10's of generations. At the other extreme, it may be possible to obtain measurements on parents and offspring.  Then, $m=0$ (for the parent) and $n=1$ (for the offspring) and the between-line (co)variance can be estimated.   
 
 If $t$ is sufficiently large, the contribution of the inherited environmental variance to the between-line variance becomes constant, and then the slope of the regression of the between-line variance on generation is a good estimator of $\sigma^2_M$. However, if the inherited environmental effects have yet to reach stationarity ($t<15$ in Figure \@ref(fig:ante)) then the slope would overestimate $\sigma^2_M$ due to the environmental contribution still increasing over time. If $m$ is sufficiently large then the shared environmental effects will have dissipated ($m>20$ in Figure \@ref(fig:ante)) and no longer contribute to the between-line variance, which is then a good estimator of $\sigma^2_M$.  
 
@@ -1457,15 +1468,17 @@ save(m3,file=file.path(root,'models/m3.Rdata'))
 save(m4,file=file.path(root,'models/m4.Rdata'))
 save(m4b,file=file.path(root,'models/m4b.Rdata'))
 save(m5,file=file.path(root,'models/m5.Rdata'))
+save(m5b,file=file.path(root,'models/m5b.Rdata'))
 save(m6,file=file.path(root,'models/m6.Rdata'))
 save(m7,file=file.path(root,'models/m7.Rdata'))
+save(m8,file=file.path(root,'models/m8.Rdata'))
 
 save(m1_correct,file=file.path(root,'models/m1_correct.Rdata'))
-save(m6_correct,file=file.path(root,'models/m6_correct.Rdata'))
+save(m7_correct,file=file.path(root,'models/m7_correct.Rdata'))
 save(m1b_correct,file=file.path(root,'models/m1b_correct.Rdata'))
-save(m6b_correct,file=file.path(root,'models/m6b_correct.Rdata'))
+save(m7b_correct,file=file.path(root,'models/m7b_correct.Rdata'))
 save(m1c_correct,file=file.path(root,'models/m1c_correct.Rdata'))
-save(m6c_correct,file=file.path(root,'models/m6c_correct.Rdata'))
+save(m7c_correct,file=file.path(root,'models/m7c_correct.Rdata'))
 
 # save mcmc models intervals
 if(rerun.mcmc){
