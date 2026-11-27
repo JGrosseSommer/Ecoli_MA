@@ -39,7 +39,7 @@ sim_mutations<-FALSE
 save<-FALSE
 ```
 
-In this workbook we detail the workflow for mapping reads and calling, validating and annotating variants in 194 *E. coli* mutation accumulation lines and two replicates of their common ancestor.  The raw reads can be found on NCBI's SRA (see [BioProject ID PRJNA1466858](https://www.ncbi.nlm.nih.gov/sra?LinkName=bioproject_sra_all&from_uid=1466858)). A root directory needs to be specified (`~/Work/Ecoli_MA`) and within that directory a subdirectory called `raw/original_sequencing` should exist. The fasta files are to large to be hosted on GitHib but can be downloaded from NCBI's Sequence Read Archive under BioProject ID PRJNA1466858. They should be placed in the `raw/original_sequencing` directory with the fasta files for each library contained within its own subdirectory. The subdirectory should be named after the sample. The sample name is the leading text of the SRA Name field prior to the sequence and the MA line is listed in the SRA Title field (e.g the first SRA is sample 270-94 corresponding to MA Line 26). Details about the samples can be found in meta/sample_submission.csv. Twenty-two lines were also resequenced at a later date and their reads are mapped and variants called. 
+In this workbook we detail the workflow for mapping reads and calling, validating and annotating variants in 194 *E. coli* mutation accumulation lines and two replicates of their common ancestor.  The raw reads can be found on NCBI's SRA (see [BioProject ID PRJNA1466858](https://www.ncbi.nlm.nih.gov/sra?LinkName=bioproject_sra_all&from_uid=1466858)). A root directory needs to be specified (`~/Work/Ecoli_MA`) and within that directory a subdirectory called `raw/original_sequencing` should exist. The fasta files are too large to be hosted on GitHib but can be downloaded from NCBI's Sequence Read Archive under BioProject ID PRJNA1466858. They should be placed in the `raw/original_sequencing` directory with the fasta files for each library contained within its own subdirectory. The subdirectory should be named after the sample. The sample name is the leading text of the SRA Name field prior to the sequence and the MA line is listed in the SRA Title field (e.g., the first SRA is sample 270-94 corresponding to MA Line 26). Details about the samples can be found in meta/sample_submission.csv. Twenty-two lines were also resequenced at a later date and their reads are mapped and variants called. 
 
 # Mapping Reads
 
@@ -245,7 +245,7 @@ abline(h=0.95, lty=2)
 ```
 
 
-All mutations with with at least 30 reads in support of the alternate allele and more than 95% of reads in support of the alternate allele (i.e. the upper right-hand quadrant formed by the dotted lines) were considered unambiguously real. The remainder were checked in the Integrative Genomics Viewer [@Robinson.2011]. The `check` column of manual\_check.csv indicates whether the mutation was checked (not `NA`) and whether it was deemed OK (`OK`) or not (`NO`). 
+All mutations with at least 30 reads in support of the alternate allele and more than 95% of reads in support of the alternate allele (i.e. the upper right-hand quadrant formed by the dotted lines) were considered unambiguously real. The remainder were checked in the Integrative Genomics Viewer [@Robinson.2011]. The `check` column of manual\_check.csv indicates whether the mutation was checked (not `NA`) and whether it was deemed OK (`OK`) or not (`NO`). 
 
 ```{r }
 manual_check<-read.csv(file.path(root, "meta/manual_check.csv"))
@@ -265,7 +265,7 @@ We can look at the 6 bps with 95% of read support or less:
 subset(vcf_dt_qual[,-c(2:5)], prop<=0.95 & nchar(ALT)==nchar(REF))
 ```
 
-Two looked like mapping error (one is in a rRNA gene) although one of those deemed as an error (230-42 960164 T->G) could have been real if there was a lot of contamination - hard to verify since the line didn't have other mutations. Four looked OK,  but 202-10 226642 T->G is in an rRNA gene and so we removed it
+Two looked like mapping error (one is in an rRNA gene) although one of those deemed as an error (230-42 960164 T->G) could have been real if there was a lot of contamination - hard to verify since the line didn't have other mutations. Four looked OK,  but 202-10 226642 T->G is in an rRNA gene and so we removed it
 
 ```{r }
 vcf_dt_qual$check[which(vcf_dt_qual$sample=="202-10" & vcf_dt_qual$POS=="226642")]<-"NO"
@@ -307,7 +307,7 @@ were all deemed mapping errors as they were in same region across lines. Similar
 
 were deemed mapping errors for the same reason.
 
-389-209 2560977 TGGTGGGTCAAAAGTTGCCGTTAA->T was deemed real but the mutation 389-209 2560999 A->AG unlikely to be real - only one mutation happened in this region.
+389-209 2560977 TGGTGGGTCAAAAGTTGCCGTTAA->T was deemed real but the mutation 389-209 2560999 A->AG is unlikely to be real - only one mutation happened in this region.
 
 The mutations
 
@@ -344,7 +344,7 @@ Three INDELS had fewer than 30 supporting reads but a proportion in excess of 0.
 subset(vcf_dt_qual[,-c(2:5)], n_alt<30 & prop>0.95 & nchar(ALT)!=nchar(REF))
 ```
 
-252-73 1386909 G->GC was deemed not real (only 2 reads with support) as it was adjoining a big region with no reads mapping - which was identified as a big deletion by Parliment.
+252-73 1386909 G->GC was deemed not real (only 2 reads with support) as it was adjoining a big region with no reads mapping - which was identified as a big deletion by Parliament.
 
 365-200 4168938 GA->G was deemed not real (6 reads with support)
 
@@ -353,7 +353,7 @@ subset(vcf_dt_qual[,-c(2:5)], n_alt<30 & prop>0.95 & nchar(ALT)!=nchar(REF))
 
 ## rRNA and insertion sequence
 
-In addition there is one bps mutation in an rRNA gene and an insertion sequence. Both have good support and are deemed real.
+In addition there is one bps mutation in an rRNA gene and on in an insertion sequence. Both have good support and are deemed real.
 
 ```{r }
 subset(vcf_dt_qual[,-c(2:5)], n_alt>30 & prop>0.95 & (rrna | is))
@@ -365,7 +365,7 @@ Three large deletions were also found using Parliament2 [@Zarate.2021]: a 321bp 
 
 ## Real mutations
 
-We only retain those mutations that passed our criteria, and excluded the mutations in the hyper-mutator that arose after mutation accumulation 
+We only retain those mutations that passed our criteria, and exclude the mutations in the hyper-mutator that arose after mutation accumulation 
 
 ```{r }
 mutations_real<-subset(vcf_dt_qual, is.na(check) | check=="OK" & !(sample=="310-142" & POS%in%c(1624349,1892648,1986327,4606086,2185868)))
@@ -733,27 +733,20 @@ matches_in_orig<-match(vcf_reseq_dt_qual$POS, mutations_real$POS)
 table(is.na(matches_in_orig))
 ```
 
-Five of the mutations that that did not appear in the original sequencing were all from line 95 
+Five of the mutations that did not appear in the original sequencing were all from line 95 
 
 
 ```{r message=FALSE, warning=FALSE}
 table(vcf_reseq_dt_qual$line[which(is.na(matches_in_orig))])
 ```
 
-Line 95 was a line that acquired a hypermutator early on.  The five mutations were called in the original sequencing but deemed to have occurred during the pre-seqeuncing growth phase since there were quite a few reads in support of the reference allele. Given these mutations appear here, in the cultures used for the growth assays, indicates that they in fact arose prior to the pre-sequencing growth phase. Indeed, all of the line 95 mutations in the repeat sequencing were listed as possible mutations originally: 
-
-
-```{r}
-table(!is.na(match(subset(vcf_reseq_dt_qual, line==95)$POS, vcf_reseq_dt_qual$POS)))
-```
-
-If we look at the five mutations that were excluded originally:
+Line 95 was a line that acquired a hypermutator early on.  The five mutations were called in the original sequencing but deemed to have occurred during the pre-sequencing growth phase since there were quite a few reads in support of the reference allele. If we look at the five mutations that were excluded originally:
 
 ```{r}
 subset(vcf_reseq_dt_qual, line==95 & !POS%in%mutations_real$POS)
 ```
 
-all are INDELS and so the support for the reference allele probably comes from ambiguity as to the INDEL position in a repetitive region. 
+three of those still show many reads in support of the reference allele, consistent with them having occurred during the pre-sequencing growth phase. However, two have few reads in support of the reference, and may be fixed mutations in line 95. Since this hypermutator line was excluded from downstream analyses we did not attempt to resolve these differences. 
 
 The additional mutation in line 122 (at position 4094489) does not appear in the list of possible mutations:
 
@@ -795,7 +788,7 @@ was originally detected in line 42:
 mutations_real$line[matches_in_orig][which(mutations_real$line[matches_in_orig]!=vcf_reseq_dt_qual$line)]
 ```
 
-In fact, if we look at all the mutations in line 84 (i.e those that did not necessarily pass the filter)
+In fact, if we look at all the mutations in line 84 (i.e., those that did not necessarily pass the filter)
 
 ```{r}
 subset(vcf_reseq_dt, line==84)$POS
@@ -808,7 +801,7 @@ the large majority were originally in line 42
 subset(vcf_dt, line==42)$POS
 ```
 
-In line 42 a crytic prophage was excised resulting in many called mutations near the *icd* gene being mapping errors.
+In line 42 a cryptic prophage was excised resulting in many called mutations near the *icd* gene being mapping errors.
 
 ## Are we missing any expected mutations? *No*.
 

@@ -1,5 +1,5 @@
 ---
-title: "*Esherichia coli* Fitness Analysis"
+title: "*Escherichia coli* Fitness Analyses"
 author:
 output: 
   bookdown::html_document2:
@@ -30,7 +30,7 @@ rerun.confint<-FALSE
 rerun.mcmc<-FALSE
 rerun.newsim<-FALSE
 rerun.estsim<-FALSE
-save<-FALSE   # save models/simulations if reran
+save<-TRUE   # save models/simulations if reran
 
 if(Sys.info()["nodename"]%in%c("sce-bio-c04553", "SCE-BIO-C07467", "S42-76R7VW5J")){
   root<-"/Users/jhadfiel/Work/Ecoli_MA"
@@ -157,7 +157,7 @@ od_df <- mutate(group_by(od_df, plate, row, column), empty = paste(plate, row, c
 plot(OD~jitter(timepoint,2),data=subset(od_df, empty), pch=16, cex=0.2, bty="l", ylab="Optical Density", xlab="Time (hours)")
 ```
 
-Note four (rather than two) wells do not appear empty - the additional wells are 22-H-10 and 23-F-2 for which there appeared to be an issue with the plate (see above). The number of empty wells per line is clearly overdispersed:
+Note that four (rather than two) wells do not appear empty - the additional wells are 22-H-10 and 23-F-2 for which there appeared to be an issue with the plate (see above). The number of empty wells per line is clearly overdispersed:
 
 ```{r }
 n_empty<-tapply(od_df$empty, od_df$line, sum)/48
@@ -256,7 +256,7 @@ Consequently, we also remove this data point:
 df<-subset(df, r<1.5)
 ```
 
-Line 95 accumulated a mutation in the mismatch-repair gene *MutL* and consequently had an elevated mutation rate with `r sum(mutations$line==95)` fixed mutations observed. There is evidence from the sequencing data that an additional five mutations arose after mutation accumulation but prior to sequencing. Given new mutations are also likely to arise during the growth assay, and data from this line are likely to have high leverage (all other lines had between zero and five), we removed this line from the analysis:
+Line 95 accumulated a mutation in the mismatch-repair gene *MutS* and consequently had an elevated mutation rate with `r sum(mutations$line==95)` fixed mutations observed. There is evidence from the sequencing data that an additional five mutations arose after mutation accumulation but prior to sequencing. Given new mutations are also likely to arise during the growth assay, and data from this line are likely to have high leverage (all other lines had between zero and five), we removed this line from the analysis:
 
 ```{r rm_95}
 df<-subset(df, line!=95)
@@ -264,7 +264,7 @@ df<-subset(df, line!=95)
 
 ## Empty wells
 
-40 replicates were not assayed because the initial culture looked like it hadn't grown, with  certain lines being overrepresented. If the initial culture did not grow because of the accumulated mutations in the line, this will bias our estimates of the DFE. However, if we compare the growth rates of lines where at least one replicates was excluded with the growth rates of lines where no replicates were excluded the difference is small and non-significant:
+40 replicates were not assayed because the initial culture looked like it hadn't grown, with  certain lines being overrepresented. If the initial culture did not grow because of the accumulated mutations in the line, this will bias our estimates of the DFE. However, if we compare the growth rates of lines where at least one replicate was excluded with the growth rates of lines where no replicates were excluded the difference is small and non-significant:
 
 
 ```{r }
@@ -343,7 +343,7 @@ The biological findings of this model are:
 
 * The `n` effect ($\beta_M$) is the expected change in growth rate caused by a single mutation - it is small and not significantly different from zero.
 
-* The `anc` effect ($\beta_A$) is positive suggesting that the ancestral line grows faster than the average growth rate of the zero-mutant lines.  
+* The `anc` effect ($\beta_A$) is positive, suggesting that the ancestral line grows faster than the average growth rate of the zero-mutant lines.  
 
 * The `line.1` (`noanc`) variance ($\sigma^2_E$) due to between-line differences not caused by mutations explains approximately  `r round(100*VarCorr(m1)$line.1/(sum(unlist(VarCorr(m1)))+sigma(m1)^2))`\% of the total variance (after controlling for the fixed effects).   
 
@@ -501,7 +501,7 @@ r_i = \beta_0 + n_i\beta_M+\sqrt{n_i}u^{(M)}_i
 
 where the expectation is taken over the distribution of environmental effects. 
 
-The selection coefficient for MA line $i$ is $r_i-r_w$, although this is in units *per hour* and is therefore hard to compare across studies and species (See Equation 2.2 in @Chevin.2011b and Equation 7 in  @Fink.2024). To make selection coefficients more comparable, they can be put on the scale of generations by using Equation 3.2 in @Chevin.2011b:
+The selection coefficient for MA line $i$ is $r_i-r_w$, although this is in units *per hour* and is therefore hard to compare across studies and species (see Equation 2.2 in @Chevin.2011b and Equation 7 in  @Fink.2024). To make selection coefficients more comparable, they can be put on the scale of generations by using Equation 3.2 in @Chevin.2011b:
 
 \begin{equation}
 s_i=\frac{r_i-r_w}{r_w}ln(2)
@@ -534,7 +534,7 @@ library(MCMCglmm)
 m1_mcmc<-MCMCglmm(r~n+anc+person+inner, 
                   random=~line+idh(sqrt(n)):line+plate+plate:column+plate:row, 
                   data=as.data.frame(df), 
-                  prior=list(R=IW(1, 0.002), G=F(1,1000)), 
+                  prior=list(R=IW(1, 0.002), G=F(1,10)), 
                   longer=10, verbose=FALSE)
 ```
 
@@ -544,7 +544,7 @@ The model estimates are very close to those obtained using restricted maximum li
 summary(m1_mcmc)
 ```
 
-And the conclusions drawn from the posterior distributions of the biological fixed effects and variance components are consistent with those obtained using REML:
+and the conclusions drawn from the posterior distributions of the biological fixed effects and variance components are consistent with those obtained using REML:
 
 ```{r } 
 plot(m1_mcmc$Sol[,c("n", "anc")])
@@ -631,7 +631,7 @@ We find that even when we only look at mutations that likely have a stronger eff
 
 ## Can the results be explained by variation in OD at the start or when the maximum growth rate is achieved?
 
-A common practice when measuring bacterial growth curves is to standardize the inoculation cell density to minimize any influence of starting density on growth curve parameter estimates. While this what not feasible given the level of throughput, we can attempt to control for starting density (`startOD`) statistically. However, there is the danger that we control for some of the fitness variation we seek to measure if the fast growth of a line results in high starting density.  
+A common practice when measuring bacterial growth curves is to standardise the inoculation cell density to minimize any influence of starting density on growth curve parameter estimates. This what not feasible given the level of throughput, we can attempt to control for starting density (`startOD`) statistically. However, there is the danger that we control for some of the fitness variation we seek to measure if the fast growth of a line results in high starting density.  
 
 ```{r m4}
 m4<-lmer(r ~ n + anc + person + inner + log(startOD) + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
@@ -645,7 +645,7 @@ The effect of (log) starting density on the maximum growth rate is small and non
 m4b<-lmer(r ~ n + anc + person + inner + log(startOD) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
 ```
 
-It is well known that OD is only directly proportional to cell density at low densities, and at high densities the relationship becomes shallower than one [@Lawrence]. Consequently, replicates that achieve their maximum growth rate at high densities will have their maximum growth rate underestimated. If the density at which maximum growth rate is achieved systematically varies over lines, then this bias in maximum growth rate will appear as between-line variance. To test for this we can control for the density at when the  maximum growth rate is achieved (`midOD`):
+It is well known that OD is only directly proportional to cell density at low densities, and at high densities the relationship becomes shallower than one [@Lawrence.1977]. Consequently, replicates that achieve their maximum growth rate at high densities will have their maximum growth rate underestimated. If the density at which maximum growth rate is achieved systematically varies over lines, then this bias in maximum growth rate will appear as between-line variance. To test for this we can control for the density at which the  maximum growth rate is achieved (`midOD`):
 
 ```{r m5}
 m5<-lmer(r ~ n + anc + person + inner + log(midOD) + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row),data=df)
@@ -692,7 +692,7 @@ m8<-lmer(r ~ n + anc + person + inner  + (1|plate) + (1|plate:column) + (1|plate
 
 # Comparison with @Sane.2018
 
-@Sane.2018 also used an MA procedure where lines differ by single mutations. However, rather than running many lines for a short period of time and sequencing at the end, they ran few lines for a long period and sequenced them periodically. Consequently, rather than comparing MA lines with a common unmutated ancestor, each line is compared to its ancestor prior to the accumulation of a single mutation.  In total, 80 single mutations were assayed.  
+@Sane.2018 also used an MA procedure where lines differ by single mutations. However, rather than running many lines for a short period of time and sequencing at the end, they ran fewer lines for a longer period and sequenced them periodically. Consequently, rather than comparing MA lines with a common unmutated ancestor, each line is compared to its ancestor prior to the accumulation of a single mutation.  In total, 80 single mutations were assayed.  
 
 ```{r inputSane}
 df_long_Sane<-read.csv(file.path(root, "meta/Sane_data.csv"))
@@ -712,7 +712,7 @@ df_Sane <- df_long_Sane[,c('mutation_id',"abs_gr_1", "abs_gr_2", "abs_gr_3","cog
     )
 ```
 
-Ideally, we would have information of the replicate estimates that formed each `cognate_anc_gr` in order to model uncertainty in $r_w$. It would also have been good to know the line identity of the immediate ancestor, since the line may itself have acquired a single mutation from a more distant ancestor. Since this information is not available we will analyse $ln(2)(r_{ij}-r_{w_i})/r__{w_i}$
+Ideally, we would have information for the replicate estimates that formed each `cognate_anc_gr` in order to model uncertainty in $r_w$. It would also have been good to know the line identity of the immediate ancestor, since the line may itself have acquired a single mutation from a more distant ancestor. Since this information is not available we will analyse $ln(2)(r_{ij}-r_{w_i})/r__{w_i}$
 
 ```{r SaneFitness_model}
 df_Sane=df_Sane %>% mutate(s =log(2)*(r-cognate_anc_gr)/cognate_anc_gr)
@@ -731,7 +731,7 @@ m0_Sane<-lm(s~1,data=df_Sane)
 anova(m1_Sane, m0_Sane)
 ```
 
-Part of the between-line variance will be driven by the fact that the same `cognate_anc_gr` value is used for each of the three replicate growth rates of a mutation. However, if we analyse the replicate growth rates of each line without normalising by the ancestors growth rate and generation time (i.e. the $r_{ij}$) we still see substantial between-line variance. 
+Part of the between-line variance will be driven by the fact that the same `cognate_anc_gr` value is used for each of the three replicate growth rates of a mutation. However, if we analyse the replicate growth rates of each line without normalising by the ancestor's growth rate and generation time (i.e. the $r_{ij}$) we still see substantial between-line variance. 
 
 ```{r SaneFitness_model2}
 m2_Sane<-lmer(r~(1|mutation_id),data=df_Sane)
@@ -748,7 +748,7 @@ We can also fit the model `m1_Sane` using Markov chain Monte Carlo:
 m1_Sane_mcmc<-MCMCglmm(s~1, 
                        random=~mutation_id, 
                        data=df_Sane, 
-                       prior=list(R=IW(1,0.002), G=F(1,1000)), 
+                       prior=list(R=IW(1,0.002), G=F(1,10)), 
                        longer=10,
                       verbose=FALSE) 
 
@@ -761,9 +761,9 @@ We interpret our estimate of $\sigma^2_E$ (the variance associated with the `(no
 
 ## Mutation calling errors and mix-ups
 
-In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call it. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round(17/(194/196)+7/(192/196)-24, 2)` /192= `r round((17/(194/196)+7/(192/196)-24)/192, 4)` mutations per sequenced line (4 sequenced lines were not assayed for fitness). We also resequenced twenty-two lines in order to assess whether there had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=$ 1/22 = `r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The expected number of true positives will then be close to the average number of called mutations per line which is 202/192=`r round(202/192, 3)` among assayed lines. 
+In `scripts/Mutation_Calling.Rmd` we simulated mutations and assessed how often our pipeline failed to call them. We found that 196/196 bps, 194/196 deletions and 192/196 insertions were detected. 17 of our INDELS were deletions and 7 were insertions. Consequently, the true number of INDELS is expected to be 17/(194/196)+7/(192/196)=`r round(17/(194/196)+7/(192/196), 2)`: our best estimate is that we missed `r round(17/(194/196)+7/(192/196)-24, 2)` mutations in total and on average around `r round(17/(194/196)+7/(192/196)-24, 2)` /192= `r round((17/(194/196)+7/(192/196)-24)/192, 4)` mutations per sequenced line (4 sequenced lines were not assayed for fitness). We also resequenced twenty-two lines in order to assess whether there had been any mix-ups. One of the twenty-two lines had switched identity between sequencing and resequencing, suggesting a mix-up rate of $p_M=$ 1/22 = `r round(1/22,3)`. The number of false-positives is hard to assess, but given the resequencing confirmed all mutations called in the original sequencing, the false-positive rate is likely very low. The expected number of true positives will then be close to the average number of called mutations per line which is 203/192=`r round(203/192, 3)` among assayed lines. 
 
-To understand how omitted mutations contribute to the between line variance in growth rate we can think about the number of omitted mutations, $\mathscr{O}$, in line $i$:
+To understand how omitted mutations contribute to the between-line variance in growth rate we can think about the number of omitted mutations, $\mathscr{O}$, in line $i$:
 
 \begin{equation}
 \mathscr{O}_i=(1-\delta)n^{(fn)}_{i}+\delta(n^{(tp)}_{j}+n^{(fn)}_{j})
@@ -826,7 +826,7 @@ and so
 ```{r echo=FALSE}
 Efn<-(17/(194/196)+7/(192/196)-24)/192
 Efp<-Efn
-Etp<-202/192-Efp
+Etp<-203/192-Efp
 p_m<-1/22
 rho<-(1-p_m)*Etp/(Etp+Efp)
 dtau<-28
@@ -1041,7 +1041,7 @@ Again, assuming the number of true-positives and false-positives are independent
 \end{array}
 \end{equation}
 
-We do not know the expected number of false-positives per line, but we expect it to be very low. Assuming it is the same as the expected false-negative rate we get $\rho$=`r round(rho, 4)`: the attenuation due to false-positives and mix-ups is modest. Note that the number of false-negatives do not appear in this expression because they introduce Berkson errors rather than classical errors and therefore do not result in slope attenuation [@Berkson.1950].   
+We do not know the expected number of false-positives per line, but we expect it to be very low. Assuming it is the same as the expected false-negative rate we get $\rho$=`r round(rho, 4)`: the attenuation due to false-positives and mix-ups is modest. Note that the number of false-negatives does not appear in this expression because they introduce Berkson errors rather than classical errors and therefore do not result in slope attenuation [@Berkson.1950].   
 
 The expected between-line variance for MA lines, conditional on the number of putative mutations ($n$) is 
 
@@ -1303,7 +1303,7 @@ abline(v=s2_E_sim+(b_M_sim^2+s2_M_sim)*(mu_g_sim+Efn_sim+p_m_sim*Etp_sim)+p_m_si
 
 ```
 
-The corrected estimates look unbiased for $\beta_M$ and $\sigma^2_M$. While the estimate for $\sigma^2_E$ is substantially better, some slight overestimation is observed, but this is likely due to many estimates been bound at zero rather than a problem with the model: no non-negative estimator of a random-effect variance is known. 
+The corrected estimates look unbiased for $\beta_M$ and $\sigma^2_M$. While the estimate for $\sigma^2_E$ is substantially better, some slight overestimation is observed, but this is likely due to many estimates being bound at zero rather than a problem with the model: no non-negative estimator of a random-effect variance is known. 
 
 We  can apply these models to our own data, but using our empirically assessed error rate parameters. First with $\Delta\tau=$ `r dtau`:
 
@@ -1333,12 +1333,12 @@ anova(m1b_correct, m7b_correct)
 
 ```
 
-$\sigma^2_E$ remains significant even if we assume the error rates and $\Delta\tau$ are an order of magnitude larger than there assumed values:
+$\sigma^2_E$ remains significant even if we assume the error rates and $\Delta\tau$ are an order of magnitude larger than their assumed values:
 
 ```{r mc_correct}
-m1c_correct<-m_correction(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
+m1c_correct<-m_correction(r~n + anc + person + inner + (noanc-1|line) + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=203/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
-m7c_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=202/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
+m7c_correct<-m_correction(r~n + anc + person + inner + (sqrt(n)-1|line) + (1|plate) + (1|plate:column) + (1|plate:row), data=df, dtau=dtau*10, mu_g=mu_g, Etp=203/192, Efp=Efp*10, Efn=Efn*10, p_m=p_m*10)
 
 anova(m1c_correct, m7c_correct)
 ```
@@ -1438,11 +1438,11 @@ lines((psi^(2*n))*VE, lwd=2, col="red")
 ```
 </div>
 
-The notation is sufficiently general to cover most MA procedures and measurement protocols. In most large multicellular organisms $m$ will often be one. For example, an MA line may be propagated by brother-sister mating and at generation $t+1$ a brother and sister are retained as the founders of the next generation and their remaining siblings (the sub-lines) are measured.  In most microbial work $m$ may be quite large as a sub-line is grown up and the fitness assays are inherently multigenerational. For example, in our experiment, each sub-line was grown for 16 hours from frozen stock followed by 4 hours on a 96-well plate within which fitness was measured as the growth rate over a twenty minute period. $m$ is therefore likely to be 10's of generations. At the other extreme, it may be possible to obtain measurements on parents and offspring.  Then, $m=0$ (for the parent) and $n=1$ (for the offspring).   
+The notation is sufficiently general to cover most MA procedures and measurement protocols. In most large multicellular organisms $m$ will often be one. For example, an MA line may be propagated by brother-sister mating and at generation $t+1$ a brother and sister are retained as the founders of the next generation and their remaining siblings (the sub-lines) are measured.  In most microbial work $m$ may be quite large as a sub-line is grown up and the fitness assays are inherently multigenerational. For example, in our experiment, each sub-line was grown for 16 hours from frozen stock followed by 4 hours on a 96-well plate within which fitness was measured as the growth rate over a twenty-minute period. $m$ is therefore likely to be tens of generations. At the other extreme, it may be possible to obtain measurements on parents and offspring.  Then, $m=0$ (for the parent) and $n=1$ (for the offspring).   
 
 If $t$ is sufficiently large, the contribution of the inherited environmental variance to the between-line variance becomes constant, and then the slope of the regression of the between-line variance on generation is a good estimator of $\sigma^2_{\Delta G} = \mu_g\sigma^2_M$. However, if the inherited environmental effects have yet to reach stationarity ($t<15$ in Figure \@ref(fig:ante)) then the slope would overestimate $\sigma^2_{\Delta G}$ due to the environmental contribution still increasing over time. If $m$ is sufficiently large then the shared environmental effects will have dissipated ($m>20$ in Figure \@ref(fig:ante)) and no longer contribute to the between-line variance, which is then a good estimator of $t\sigma^2_{\Delta G}=t\mu_g\sigma^2_M$.  
 
-If fitness measurements were available at a range of $t$ and/or $m$, yet it was found that neither $t$ or $m$ were sufficiently large for the environmental between-line variance to asymptote (to zero if $m$ is large), the data could still be used to get estimates of $\sigma^2_{\Delta G}$ by fitting an antedependence model and co-estimating $\sigma^2_{\Delta E}$  and $\psi$, in addition to $\sigma^2_{\Delta G}$.  Such a model has been developed and fitted to data collected on *Drosophila melanogaster* MA lines [@Mackay.1995]. However, it should be emphasised that in that paper the non-linear change in the between-line variance is attributed to selection operating on new mutations which essentially causes mutational effects to be inherited without perfect fidelity, as measured through $\psi$. In addition, the authors also note that excess residual heterozygosity in the ancestor (relative to the asymptotic with-line genetic variance expected under MA) and diminishing returns epistasis would also cause the between-line variance to increase faster in early generations, and so interpreting $\psi$ as a measure of selection requires some care. The issue of excess residual heterozygosity, at least, can be dealt with by discarding data from the first $6N_e$ generations of MA, since beyond this the within-line genetic variance will have stabilised at its equilibrium value (where $N_e$ is the effective population size of an MA line). 
+If fitness measurements were available at a range of $t$ and/or $m$, yet it was found that neither $t$ nor $m$ were sufficiently large for the environmental between-line variance to asymptote (to zero if $m$ is large), the data could still be used to get estimates of $\sigma^2_{\Delta G}$ by fitting an antedependence model and co-estimating $\sigma^2_{\Delta E}$  and $\psi$, in addition to $\sigma^2_{\Delta G}$.  Such a model has been developed and fitted to data collected on *Drosophila melanogaster* MA lines [@Mackay.1995]. However, it should be emphasised that in that paper the non-linear change in the between-line variance is attributed to selection operating on new mutations which essentially causes mutational effects to be inherited without perfect fidelity, as measured through $\psi$. In addition, the authors also note that excess residual heterozygosity in the ancestor (relative to the asymptotic within-line genetic variance expected under MA) and diminishing returns epistasis would also cause the between-line variance to increase faster in early generations, and so interpreting $\psi$ as a measure of selection requires some care. The issue of excess residual heterozygosity, at least, can be dealt with by discarding data from the first $6N_e$ generations of MA, since beyond this the within-line genetic variance will have stabilised at its equilibrium value (where $N_e$ is the effective population size of an MA line). 
 
 For completeness, the within-line variance is
 
